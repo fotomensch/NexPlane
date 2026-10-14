@@ -1,3 +1,50 @@
+> **This is a fork of [nforrester/NexPlane](https://github.com/nforrester/NexPlane)** with
+> extensions for tracking aircraft with a **Sky-Watcher EQ5 in equatorial mode**: taught axis
+> limits, meridian flips, a browser GUI, a pointing model built from aircraft sync points, PS4
+> controller support and more. The work lives on the branch `eq5-extensions`; `master` mirrors
+> upstream. All features are described in **[FEATURES.md](FEATURES.md)** and are being proposed
+> upstream as separate pull requests.
+
+## What this fork adds
+
+![Browser GUI with blind areas and a tracked aircraft](doc/webgui-sky.png)
+
+- **Mount safety:** a taught polygon of allowed axis positions with exclusion zones and profiles
+  keeps a long tube from hitting the tripod. Limits can be refined from the browser.
+- **Equatorial mode on both pier sides:** automatic meridian flip, and a map of the sky regions
+  the mount cannot reach.
+- **Browser GUI (`--web`):** sky view and ground map, aircraft list with flight links, manual jog,
+  go-home and alignment from the browser, location editor with map picker, GPS and ground
+  elevation lookup, German/English.
+- **Pointing model:** corrections in the camera frame become sync points; from three points the
+  polar misalignment is fitted and shown as "x° too low, y° too far east". Alignment works
+  without a landmark, on the first aircraft.
+- **Gamepad:** a PS4 controller over Bluetooth for correction, target selection and sync points,
+  read directly from `/dev/input`.
+- **Tools:** a start script for dump1090, telescope server and NexPlane, serial-port detection
+  that skips LTE modems, tracking logs for measuring pointing errors.
+
+### Quick start (simulator)
+
+```bash
+git clone -b eq5-extensions https://github.com/fotomensch/NexPlane.git
+cd NexPlane
+pip install -r requirements.txt
+./nexplane.py --hootl --web --mount-mode eq --telescope-protocol skywatcher-mount-head-usb
+```
+
+This opens the browser GUI with a simulated Sky-Watcher mount. To try the safe area, teach a
+limits file first with `./teach_limits.py --hootl --telescope-protocol skywatcher-mount-head-usb`
+and add it to `config.yaml` (see [FEATURES.md](FEATURES.md#1-axis-soft-limits)).
+
+| Ground map with blind areas | Refining the limits | Places editor |
+| --- | --- | --- |
+| ![Map](doc/webgui-map.png) | ![Refine](doc/webgui-refine.png) | ![Places](doc/webgui-places.png) |
+
+---
+
+*The original README follows.*
+
 # SAFETY WARNING
 
 NexPlane can drive your telescope quickly, possibly in directions you do not expect.
