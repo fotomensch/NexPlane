@@ -19,8 +19,8 @@ import axis_limits
 import eq_flip
 import gamepad
 import gps
-import orte
 import pad_control
+import places
 import reach_map
 import astronomical
 import config
@@ -158,14 +158,14 @@ def main() -> None:
         exit_exceptions = (webgui.Exit,)
         gui_iface = webgui.WebGui(observatory_location, kp, ki, kd, port=args.web_port,
                                   open_browser=not args.no_browser, mount_mode=args.mount_mode)
-        own_orte = set(orte.load())
+        own_places = set(places.load())
 
         def publish_locations() -> None:
             locs = config_data['locations']
             gui_iface.set_locations(args.location, {
                 name: (float(loc['lat_degrees']), float(loc['lon_degrees']), float(loc['alt_meters']))
                 for name, loc in locs.items()},
-                {name: str(loc.get('typ', 'standort')) for name, loc in locs.items()}, own_orte)
+                {name: str(loc.get('type', 'location')) for name, loc in locs.items()}, own_places)
         publish_locations()
         if config_data.get('gps', True):
             gui_iface.set_gps(gps.GpsReader())
@@ -331,7 +331,7 @@ def main() -> None:
 
         # Remember the mount's heading in the home position: on the next start NexPlane is then
         # roughly aligned without a landmark (accuracy about that of the north alignment).
-        home_ha_file = os.path.join(config.main_config_dir(), 'home_richtung.yaml')
+        home_ha_file = os.path.join(config.main_config_dir(), 'home_direction.yaml')
 
         def home_raw_now() -> tuple[float, float]:
             assert manual is not None
@@ -347,8 +347,8 @@ def main() -> None:
                 with open(home_ha_file, 'w') as f:
                     f.write('# Written by NexPlane: hour angle of the RA axis in the home position.\n'
                             '# Used for rough alignment without a landmark. Delete it if the mount was rebuilt.\n')
-                    yaml.dump({'home_stundenwinkel_grad': float(math.degrees(h)),
-                               'gespeichert': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
+                    yaml.dump({'hour_angle_degrees': float(math.degrees(h)),
+                               'saved': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
             except OSError as e:
                 notify(Msg('The home direction could not be saved: {error}', error=str(e)))
 
@@ -358,7 +358,7 @@ def main() -> None:
                 return False
             try:
                 with open(home_ha_file) as f:
-                    h = math.radians(float(yaml.safe_load(f)['home_stundenwinkel_grad']))
+                    h = math.radians(float(yaml.safe_load(f)['hour_angle_degrees']))
             except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError):
                 return False
             ra_raw_h, dec_raw_h = home_raw_now()
@@ -401,7 +401,7 @@ def main() -> None:
                                       bool(pad_settings['rumble']), pad_settings['device'])
                 padctl = pad_control.PadControl(pad_settings, pad)
             if config_data.get('track_log', True):
-                track_log = pad_control.TrackLog(os.path.join(config.main_config_dir(), 'protokolle'))
+                track_log = pad_control.TrackLog(os.path.join(config.main_config_dir(), 'logs'))
         if manual is not None and not (args.landmark or args.alignment):
             if not rough_align():
                 notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft as aiming '
@@ -434,10 +434,10 @@ def main() -> None:
 
         obs_lat = float(observatory_location.lat.to_value('rad'))
         obs_height = float(observatory_location.height.to_value('m'))
-        sensor_mm = float(config_data.get('sensor_breite_mm', 23.5))
-        focal_steps = [float(x) for x in config_data.get('brennweiten_mm', [150, 300, 600])]
+        sensor_mm = float(config_data.get('sensor_width_mm', 23.5))
+        focal_steps = [float(x) for x in config_data.get('focal_lengths_mm', [150, 300, 600])]
         if args.web:
-            gui_iface.set_focal_options(focal_steps, float(config_data.get('brennweite_mm', focal_steps[0])))
+            gui_iface.set_focal_options(focal_steps, float(config_data.get('focal_length_mm', focal_steps[0])))
 
         def model_text() -> Text:
             assert pointing is not None
@@ -519,18 +519,18 @@ def main() -> None:
             if track_log is not None:
                 st = pointing.model.status(obs_lat)
                 try:
-                    track_log.sync({'zeit': time.time(), 'hex': hex_id or '', 'kennung': callsign,
-                                    'flug_az': math.degrees(p_az) if p_az is not None else None,
-                                    'flug_el': math.degrees(p_el) if p_el is not None else None,
+                    track_log.sync({'time': time.time(), 'hex': hex_id or '', 'callsign': callsign,
+                                    'plane_az': math.degrees(p_az) if p_az is not None else None,
+                                    'plane_el': math.degrees(p_el) if p_el is not None else None,
                                     'ra_raw': math.degrees(raw_ra), 'dec_raw': math.degrees(raw_dec),
-                                    'ra_cal_vorher': math.degrees(util.wrap_rad(old_cal[0], 0)),
-                                    'dec_cal_vorher': math.degrees(util.wrap_rad(old_cal[1], 0)),
-                                    'korr_ra': math.degrees(corr[0]), 'korr_dec': math.degrees(corr[1]),
-                                    'ra_cal_neu': math.degrees(util.wrap_rad(new_ra_cal, 0)),
-                                    'dec_cal_neu': math.degrees(util.wrap_rad(new_dec_cal, 0)),
-                                    'punkte': st['points'], 'modell_aktiv': int(st['active']),
-                                    'rest_grad': st['rms'], 'pol_hoch_grad': st['polar_high'],
-                                    'pol_ost_grad': st['polar_east'], 'kegel_grad': st['cone']})
+                                    'ra_cal_before': math.degrees(util.wrap_rad(old_cal[0], 0)),
+                                    'dec_cal_before': math.degrees(util.wrap_rad(old_cal[1], 0)),
+                                    'corr_ra': math.degrees(corr[0]), 'corr_dec': math.degrees(corr[1]),
+                                    'ra_cal_after': math.degrees(util.wrap_rad(new_ra_cal, 0)),
+                                    'dec_cal_after': math.degrees(util.wrap_rad(new_dec_cal, 0)),
+                                    'points': st['points'], 'model_active': int(st['active']),
+                                    'residual': st['rms'], 'polar_high': st['polar_high'],
+                                    'polar_east': st['polar_east'], 'cone': st['cone']})
                 except OSError:
                     pass
             notify(msg)
@@ -680,35 +680,35 @@ def main() -> None:
                         if warning:
                             notify(warning)
 
-                for oreq in (gui_iface.pop_orte_requests() if args.web else []):
-                    if oreq['cmd'] == 'ort_save':
-                        base = {k: v for k, v in config_data['locations'].items() if k not in own_orte}
-                        err: Msg | None = orte.save(oreq['name'], oreq['typ'], oreq['lat'], oreq['lon'], oreq['alt'], base)
+                for preq in (gui_iface.pop_place_requests() if args.web else []):
+                    if preq['cmd'] == 'place_save':
+                        base = {k: v for k, v in config_data['locations'].items() if k not in own_places}
+                        err: Msg | None = places.save(preq['name'], preq['type'], preq['lat'], preq['lon'], preq['alt'], base)
                     else:
-                        err = orte.delete(oreq['name'])
-                        if err is None and oreq['name'] == args.location:
+                        err = places.delete(preq['name'])
+                        if err is None and preq['name'] == args.location:
                             err = Msg('The active location cannot be deleted.')
                     if err:
-                        notify(Msg('Place not saved: {error}', error=err) if oreq['cmd'] == 'ort_save'
+                        notify(Msg('Place not saved: {error}', error=err) if preq['cmd'] == 'place_save'
                                else Msg('Not deleted: {error}', error=err))
                         continue
-                    base = {k: v for k, v in config_data['locations'].items() if k not in own_orte}
-                    own = orte.load()
-                    own_orte.clear()
-                    own_orte.update(own)
+                    base = {k: v for k, v in config_data['locations'].items() if k not in own_places}
+                    own = places.load()
+                    own_places.clear()
+                    own_places.update(own)
                     config_data['locations'] = {**base, **own}
                     publish_locations()
                     if manual is not None:
                         gui_iface.set_align_targets([n for n in config_data['locations'] if n != args.location])
-                    if oreq['cmd'] == 'ort_save':
-                        saved = (Msg('Landmark “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **oreq)
-                                 if oreq['typ'] == 'landmarke' else
-                                 Msg('Location “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **oreq))
+                    if preq['cmd'] == 'place_save':
+                        saved = (Msg('Landmark “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **preq)
+                                 if preq['type'] == 'landmark' else
+                                 Msg('Location “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **preq))
                         notify(saved)
-                        if oreq.get('activate') and oreq['typ'] == 'standort' and oreq['name'] != args.location:
-                            gui_iface.command('set_location', {'name': oreq['name']})
+                        if preq.get('activate') and preq['type'] == 'location' and preq['name'] != args.location:
+                            gui_iface.command('set_location', {'name': preq['name']})
                     else:
-                        notify(Msg('“{name}” deleted.', name=oreq['name']))
+                        notify(Msg('“{name}” deleted.', name=preq['name']))
 
                 # Refining the safe area: crosshair position, preview and new boundary vertices
                 if args.web and limit_guard is not None:
@@ -836,7 +836,7 @@ def main() -> None:
                     tracking_now = (tracked_plane_hex_id is not None or fixed_target is not None) and gui_iface.is_aligned()
                     for press in pad.pop_presses():
                         st = padctl.step(press)
-                        if press == 'dreieck':
+                        if press == 'triangle':
                             gui_iface.command('stop', {})
                             target_tracker.stop()
                             if manual is not None:
@@ -847,11 +847,11 @@ def main() -> None:
                             tracking_now = False
                             notify(Msg('STOP (gamepad).'))
                             pad.rumble(0.9, 0.9, 400)
-                        elif press == 'kreis':
+                        elif press == 'circle':
                             pointing.reset_correction()
                             notify(Msg('Correction set to 0 (gamepad).'))
                             pad.rumble(0.5, 0.5, 90, 2)
-                        elif press == 'kreuz':
+                        elif press == 'cross':
                             if save_correction(tracked_plane_hex_id):
                                 pad.rumble(0.7, 0.7, 300)
                             else:
@@ -864,7 +864,7 @@ def main() -> None:
                             pad.rumble(0.4, 0.4, 100, focal_steps.index(nxt) + 1)
                         elif press == 'share' and gui_iface.refine_is_active():
                             gui_iface.queue_refine('add')
-                        elif press == 'quadrat':
+                        elif press == 'square':
                             if remove_last_point():
                                 pad.rumble(0.5, 0.5, 90, 2)
                             else:
@@ -1023,18 +1023,18 @@ def main() -> None:
                                     ahead = plane_now.extrapolate(time.monotonic_ns() + 1_000_000_000)
                                     daz = util.wrap_rad(unwrap(ahead.az.value) - unwrap(tracked_plane.az.value), -math.pi)
                                     track_log.write({
-                                        'zeit': time.time(), 'hex': tracked_plane_hex_id,
-                                        'kennung': (plane_now.callsign.value or '').strip(),
-                                        'flug_az': math.degrees(unwrap(tracked_plane.az.value)),
-                                        'flug_el': math.degrees(unwrap(tracked_plane.el.value)),
-                                        'entfernung_m': float(unwrap(tracked_plane.range.value)),
-                                        'flug_az_rate': math.degrees(daz),
-                                        'flug_el_rate': math.degrees(unwrap(ahead.el.value) - unwrap(tracked_plane.el.value)),
-                                        'tele_az': math.degrees(scope_azm_alt[0]), 'tele_el': math.degrees(scope_azm_alt[1]),
-                                        'seite': cand.side,
+                                        'time': time.time(), 'hex': tracked_plane_hex_id,
+                                        'callsign': (plane_now.callsign.value or '').strip(),
+                                        'plane_az': math.degrees(unwrap(tracked_plane.az.value)),
+                                        'plane_el': math.degrees(unwrap(tracked_plane.el.value)),
+                                        'range_m': float(unwrap(tracked_plane.range.value)),
+                                        'plane_az_rate': math.degrees(daz),
+                                        'plane_el_rate': math.degrees(unwrap(ahead.el.value) - unwrap(tracked_plane.el.value)),
+                                        'scope_az': math.degrees(scope_azm_alt[0]), 'scope_el': math.degrees(scope_azm_alt[1]),
+                                        'side': cand.side,
                                         'ra_raw': math.degrees(unwrap(pointing.last_raw)[0]),
                                         'dec_raw': math.degrees(unwrap(pointing.last_raw)[1]),
-                                        'korr_ra': math.degrees(pointing.corr_ra), 'korr_dec': math.degrees(pointing.corr_dec),
+                                        'corr_ra': math.degrees(pointing.corr_ra), 'corr_dec': math.degrees(pointing.corr_dec),
                                         'ra_cal': math.degrees(util.wrap_rad(pointing.ra_cal, 0)),
                                         'dec_cal': math.degrees(util.wrap_rad(pointing.dec_cal, 0))})
                                 except (OSError, TypeError, ValueError):

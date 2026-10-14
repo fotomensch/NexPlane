@@ -11,8 +11,8 @@ ev = lambda t, c, v: os.write(w, struct.pack(gamepad.EVENT_FMT, 0, 0, t, c, v))
 time.sleep(4); print(req('/api/track', {'hex': '0x0aa0001'})); time.sleep(30)
 t_stick = time.time(); ev(3, 0, 255); time.sleep(3); ev(3, 0, 128); t_end = time.time()
 time.sleep(8); s = req('/api/state'); print('Korrektur', s['correction']['ra'], s['correction']['dec']); req('/api/stop', {})
-rows = list(csv.DictReader(open(glob.glob('protokolle/verfolgung_*.csv')[0])))
+rows = list(csv.DictReader(open(glob.glob('logs/tracking_*.csv')[0])))
 for r in rows:
-    t = float(r['zeit'])
+    t = float(r['time'])
     if t_stick - 4 < t < t_end + 8 and int(t*5) % 5 == 0:
-        print(f"t={t - t_stick:+5.1f}  ra_raw {float(r['ra_raw']):9.3f} dec_raw {float(r['dec_raw']):8.3f}  korr_ra {float(r['korr_ra']):6.3f}  tele_az {float(r['tele_az']):7.2f} flug_az {float(r['flug_az']):7.2f}")
+        print(f"t={t - t_stick:+5.1f}  ra_raw {float(r['ra_raw']):9.3f} dec_raw {float(r['dec_raw']):8.3f}  korr_ra {float(r['corr_ra']):6.3f}  tele_az {float(r['scope_az']):7.2f} flug_az {float(r['plane_az']):7.2f}")

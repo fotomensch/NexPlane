@@ -15,7 +15,7 @@ a = pad.axes(); check(abs(a['lx']-1) < 0.01 and abs(a['ly']-1) < 0.01 and abs(a[
 ev(3, 0, 130); ev(3, 1, 125); time.sleep(0.3)
 a = pad.axes(); check(a['lx'] == 0 and a['ly'] == 0, 'Totzone um die Mitte')
 ev(1, 0x130, 1); ev(1, 0x130, 0); ev(1, 0x137, 1); ev(3, 0x11, -1); ev(3, 0x11, 0); ev(3, 0x10, 1); time.sleep(0.3)
-p = pad.pop_presses(); check(p == ['kreuz', 'r1', 'hoch', 'rechts'], f'Tasten/Steuerkreuz: {p}')
+p = pad.pop_presses(); check(p == ['cross', 'r1', 'up', 'right'], f'Tasten/Steuerkreuz: {p}')
 pad.rumble(); time.sleep(0.4); check(pad.connected, 'Vibration auf Geraet ohne Vibration: kein Absturz')
 ev(3, 0, 255); time.sleep(0.2); os.close(pad.fd); time.sleep(0.8)
 check(not pad.connected and 'lost' in str(pad.error), f'Trennung erkannt: {pad.error}')

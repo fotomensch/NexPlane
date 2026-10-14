@@ -273,18 +273,5 @@ class Model:
                 'polar_east': math.degrees(pe[1]) if pe else None,
                 'cone': math.degrees(self.cone) if self.active else None}
 
-    # --- Save / load ---------------------------------------------------------
-
-    def to_dict(self) -> dict[str, Any]:
-        return {'aktiv': self.active, 'ex': self.ex, 'ey': self.ey, 'kegel': self.cone,
-                'punkte': [dict(p) for p in self.points]}
-
-    def load_dict(self, data: dict[str, Any] | None) -> None:
-        if not data:
-            return
-        self.points = [dict(p) for p in data.get('punkte', [])]
-        self.set_params(float(data.get('ex', 0.0)), float(data.get('ey', 0.0)), float(data.get('kegel', 0.0)),
-                        bool(data.get('aktiv', False)))
-
 def _wrap(x: float) -> float:
     return (x + math.pi) % (2 * math.pi) - math.pi

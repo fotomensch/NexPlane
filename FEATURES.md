@@ -71,7 +71,7 @@ under a real sky.
 | 13 | Focal-length weighting, point list | `pointing_model.py`, `webgui.*` | 11 | Sim |
 | 14 | Forget alignment | `nexplane.py`, `webgui.*` | 11 | Sim |
 | 15 | Gamepad (PS4) control | `gamepad.py`, `pad_control.py` | 10 | Bench |
-| 16 | Places editor with map picker | `orte.py`, `config.py`, `webgui.*` | 6, 8 | Bench |
+| 16 | Places editor with map picker | `places.py`, `config.py`, `webgui.*` | 6, 8 | Bench |
 | 17 | GPS from the WWAN modem | `gps.py`, `gps_check.py` | 6 | Bench / Sim |
 | 18 | Ground elevation lookup | `elevation.py`, `webgui.*` | 16 | Sim |
 | 19 | Start script | `start_nexplane.py` | – | Bench |
@@ -314,7 +314,7 @@ corrections into a pointing model for the current setup.
   centres it by hand (stick or jog buttons) and accepts it (gamepad ✕ or the button in the
   browser). That point fully calibrates the mount via `eq_flip.calibrate`.
 - After every alignment the RA axis orientation at the taught home position is saved
-  (`home_richtung.yaml`, an hour angle). On the next start NexPlane is roughly aligned from home,
+  (`home_direction.yaml`, an hour angle). On the next start NexPlane is roughly aligned from home,
   provided the mount was set up roughly facing north and switched on at home.
 
 ```mermaid
@@ -333,14 +333,14 @@ flowchart TD
 ### 13 Focal-length weighting and point list
 
 Each point records the focal length chosen in the browser (or cycled with the gamepad Options
-button). Its weight assumes centring to 3% of the frame width (APS-C, 23.5 mm, `sensor_breite_mm`)
+button). Its weight assumes centring to 3% of the frame width (APS-C, 23.5 mm, `sensor_width_mm`)
 plus 0.05° ADS-B error. In the simulator a coarse 150 mm point 1° off plus four 600 mm points gave
 0.04° mean error instead of 0.21° unweighted. Any point can be deleted from the list.
 
 ### 14 Forget alignment
 
 Discards points, model and correction and returns to "not aligned"; optionally also deletes
-`home_richtung.yaml` (for indoor tests where home did not face north).
+`home_direction.yaml` (for indoor tests where home did not face north).
 
 ### 25 Refuse alignment targets near the celestial pole
 
@@ -402,14 +402,14 @@ so new sites can be set up from the browser.
 
 ![Places editor](doc/webgui-places.png)
 
-- New locations and landmarks are saved in `orte.yaml` next to `config.yaml`;
+- New locations and landmarks are saved in `places.yaml` next to `config.yaml`;
   `config.read_config` merges its `locations` after `config.yaml`. `config.yaml` is never
   rewritten, and its entries cannot be overwritten from the browser.
-- Entries carry `typ: standort` (location) or `typ: landmarke` (landmark). Landmarks appear only as
+- Entries carry `type: location` or `type: landmark`. Landmarks appear only as
   alignment targets, not in the location list.
 - A Leaflet picker in the Location card: click or drag a marker, OpenStreetMap or Esri satellite
   layer, full-screen mode. "Save & use as location" saves and restarts NexPlane with it. Name, range
-  and duplicate checks are in `orte.validate`.
+  and duplicate checks are in `places.validate`.
 
 ### 17 GPS from the WWAN modem
 
@@ -450,8 +450,8 @@ holders and sends 20 `:e1` queries.
 
 - If the mount does not answer at start, NexPlane prints a checklist (power, cable, port, SynScan
   app) instead of the `UnboundLocalError` that the `finally` block used to raise.
-- `protokolle/verfolgung_<time>.csv` logs about 5 rows per second while tracking (aircraft az/el and
-  rates, telescope az/el, side, raw axes, correction, calibration). `protokolle/ausrichtpunkte.csv`
+- `logs/tracking_<time>.csv` logs about 5 rows per second while tracking (aircraft az/el and
+  rates, telescope az/el, side, raw axes, correction, calibration). `logs/sync_points.csv`
   logs every sync point with the model state. Both are meant for measuring ADS-B latency and real
   pointing errors (`track_log: false` disables them).
 
@@ -473,7 +473,7 @@ All new keys are optional.
 | `gamepad.invert_x`, `invert_y`, `swap_xy`, `deadzone` | false, false, false, 0.12 | 15 |
 | `gamepad.correction_deg_per_s`, `fast_factor`, `fine_factor`, `step_degrees` | 0.4, 6, 0.15, 0.02 | 15 |
 | `gamepad.jog_deg_per_s`, `jog_fast_deg_per_s`, `min_elevation_degrees`, `rumble` | 1.0, 5.0, 8, true | 15 |
-| `brennweiten_mm`, `brennweite_mm`, `sensor_breite_mm` | [150, 300, 600], 150, 23.5 | 13 |
+| `focal_lengths_mm`, `focal_length_mm`, `sensor_width_mm` | [150, 300, 600], 150, 23.5 | 13 |
 | `gps` | true | 17 |
 | `track_log` | true | 22 |
 
@@ -501,12 +501,13 @@ All next to `config.yaml`:
 | --- | --- | --- |
 | `limits*.yaml`, `*_preview.svg` | `teach_limits.py`, refining in the browser | 1, 2, 23 |
 | `align.yaml` | `align.py`, alignment in the browser | upstream, 7 |
-| `home_richtung.yaml` | every alignment with a taught home | 12 |
-| `orte.yaml` | places editor | 16 |
-| `protokolle/*.csv` | tracking and sync point logs | 22 |
+| `home_direction.yaml` | every alignment with a taught home | 12 |
+| `places.yaml` | places editor | 16 |
+| `logs/*.csv` | tracking and sync point logs | 22 |
 
-Several config keys and file names are still German (`orte.yaml`, `brennweiten_mm`, …). They
-will get English names in the upstream pull requests.
+Config keys and file names are English. Setups that used the earlier German names
+(`orte.yaml`, `home_richtung.yaml`, `brennweiten_mm`, …) can be converted with
+`devtests/migrate_names.py`.
 
 ## Known limitations
 

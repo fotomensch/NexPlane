@@ -19,7 +19,7 @@ def check(c, m):
     print(('OK   ' if c else 'FEHL ') + m)
     if not c: fails.append(m)
 import config
-hfile = os.path.join(config.main_config_dir(), 'home_richtung.yaml')
+hfile = os.path.join(config.main_config_dir(), 'home_direction.yaml')
 mt = {f: os.path.getmtime(f) for f in ['testflip_align.yaml'] + ([hfile] if os.path.exists(hfile) else [])}
 time.sleep(3)
 s = req('/api/state'); print('vorher:', s['manual']['aligned'], en(s['manual']['aligned_text']))

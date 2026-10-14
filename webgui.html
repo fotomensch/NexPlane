@@ -40,16 +40,16 @@ header h1 { font-size: 16px; margin: 0 6px 0 0; letter-spacing: .5px; }
 .spacer { flex: 1; }
 #banner { display: none; background: var(--warn); color: #000; font-weight: 700; text-align: center; padding: 8px; }
 #banner.show { display: block; }
-#ort-wrap { position: relative; height: 240px; margin-top: 8px; }
-#ort-wrap #ort-map { position: absolute; inset: 0; border-radius: 6px; }
-#ort-wrap.full { position: fixed; inset: 0; height: auto; margin: 0; z-index: 3000; background: var(--bg); }
-#ort-wrap.full #ort-map { border-radius: 0; bottom: 44px; }
-#ort-bar { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; padding: 6px 10px; gap: 10px;
+#place-wrap { position: relative; height: 240px; margin-top: 8px; }
+#place-wrap #place-map { position: absolute; inset: 0; border-radius: 6px; }
+#place-wrap.full { position: fixed; inset: 0; height: auto; margin: 0; z-index: 3000; background: var(--bg); }
+#place-wrap.full #place-map { border-radius: 0; bottom: 44px; }
+#place-bar { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; padding: 6px 10px; gap: 10px;
            align-items: center; background: var(--panel, #1b1f27); font-size: 14px; }
-#ort-wrap.full #ort-bar { display: flex; }
-#ort-fs { position: absolute; top: 10px; right: 54px; z-index: 1000; padding: 2px 8px; }
+#place-wrap.full #place-bar { display: flex; }
+#place-fs { position: absolute; top: 10px; right: 54px; z-index: 1000; padding: 2px 8px; }
 /* Let the inputs of the places editor shrink to the card width (long option texts would overflow) */
-#ort-edit .kv > input, #ort-edit .kv > select { min-width: 0; width: 100%; }
+#place-edit .kv > input, #place-edit .kv > select { min-width: 0; width: 100%; }
 #limbanner { display: none; background: #d01010; color: #fff; font-weight: 700; text-align: center; padding: 8px; }
 #limbanner.show { display: block; }
 main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
@@ -140,29 +140,29 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <select id="loc-sel" class="btn" style="width:100%"></select>
       <button class="btn" id="btn-loc" style="width:100%;margin-top:6px">Change location</button>
       <div class="hint" style="margin-top:6px">The mount is stopped and NexPlane restarts with the new location. Alignment depends on the location and must be redone afterwards.</div>
-      <details id="ort-edit" style="margin-top:10px">
+      <details id="place-edit" style="margin-top:10px">
         <summary style="cursor:pointer;font-weight:600">Add locations &amp; landmarks</summary>
-        <div id="ort-wrap">
-          <div id="ort-map"></div>
-          <button class="btn" id="ort-fs" title="Full screen">⛶</button>
-          <div id="ort-bar"><span id="ort-barpos" style="flex:1">–</span><button class="btn" id="ort-fs-done">Accept &amp; back</button></div>
+        <div id="place-wrap">
+          <div id="place-map"></div>
+          <button class="btn" id="place-fs" title="Full screen">⛶</button>
+          <div id="place-bar"><span id="place-barpos" style="flex:1">–</span><button class="btn" id="place-fs-done">Accept &amp; back</button></div>
         </div>
-        <div class="hint" id="ort-maphint" style="margin:4px 0 8px">Click into the map or drag the marker. Without internet the map stays empty – then type the coordinates or use GPS.</div>
+        <div class="hint" id="place-maphint" style="margin:4px 0 8px">Click into the map or drag the marker. Without internet the map stays empty – then type the coordinates or use GPS.</div>
         <div class="kv" style="grid-template-columns:auto 1fr;gap:4px 8px;align-items:center">
-          <span>Name</span><input id="ort-name" class="btn" maxlength="40" placeholder="e.g. hill car park">
-          <span>Type</span><select id="ort-typ" class="btn"><option value="standort">Location (where the telescope stands)</option><option value="landmarke">Landmark (for alignment)</option></select>
-          <span>Latitude</span><input id="ort-lat" class="btn" inputmode="decimal" placeholder="51.12345 (degrees)">
-          <span>Longitude</span><input id="ort-lon" class="btn" inputmode="decimal" placeholder="7.12345 (degrees)">
-          <span>Altitude (m)</span><input id="ort-alt" class="btn" inputmode="decimal" placeholder="above sea level">
+          <span>Name</span><input id="place-name" class="btn" maxlength="40" placeholder="e.g. hill car park">
+          <span>Type</span><select id="place-type" class="btn"><option value="location">Location (where the telescope stands)</option><option value="landmark">Landmark (for alignment)</option></select>
+          <span>Latitude</span><input id="place-lat" class="btn" inputmode="decimal" placeholder="51.12345 (degrees)">
+          <span>Longitude</span><input id="place-lon" class="btn" inputmode="decimal" placeholder="7.12345 (degrees)">
+          <span>Altitude (m)</span><input id="place-alt" class="btn" inputmode="decimal" placeholder="above sea level">
         </div>
-        <div class="hint" id="ort-elev" style="margin-top:4px"></div>
+        <div class="hint" id="place-elev" style="margin-top:4px"></div>
         <div class="hint" style="margin-top:4px">Height above sea level. For landmarks the height of the sighted point, e.g. the church spire, not of the ground.</div>
         <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn" id="ort-gps">Use GPS position</button>
-          <button class="btn" id="ort-save">Save</button>
-          <button class="btn" id="ort-save-act" title="Save as location and restart NexPlane with it">Save &amp; use as location</button>
+          <button class="btn" id="place-gps">Use GPS position</button>
+          <button class="btn" id="place-save">Save</button>
+          <button class="btn" id="place-save-act" title="Save as location and restart NexPlane with it">Save &amp; use as location</button>
         </div>
-        <div id="ort-list" style="margin-top:8px;font-size:12px"></div>
+        <div id="place-list" style="margin-top:8px;font-size:12px"></div>
       </details>
     </div>
     <div class="card" id="limits-card">
@@ -500,11 +500,11 @@ function updatePanel() {
   const cur = L.presets.find(p => p.name === L.current);
   $('loc-current').textContent = L.current || '–';
   $('loc-coords').textContent = cur ? `${fmt(cur.lat, 4)}°, ${fmt(cur.lon, 4)}°, ${fmt(cur.alt, 0)} m` : '–';
-  const lkey = LANG + '|' + L.current + '|' + L.presets.map(p => p.name + p.typ + p.lat + p.lon + p.alt).join('|');
+  const lkey = LANG + '|' + L.current + '|' + L.presets.map(p => p.name + p.type + p.lat + p.lon + p.alt).join('|');
   if ($('loc-sel').dataset.key !== lkey) {
     $('loc-sel').dataset.key = lkey;
-    $('loc-sel').innerHTML = L.presets.filter(p => p.typ !== 'landmarke').map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
-    renderOrtList(L);
+    $('loc-sel').innerHTML = L.presets.filter(p => p.type !== 'landmark').map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+    renderPlaceList(L);
   }
   const G = S.gps, fixp = G && G.fix;
   let gpsTxt = G ? msgText(G.status) : T('off');
@@ -700,106 +700,106 @@ function distM(la1, lo1, la2, lo2) {
   const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
   return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
 }
-let ortMap = null, ortMarker = null, ortLayer = null;
-function ortFields() {
+let placeMap = null, placeMarker = null, placeLayer = null;
+function placeFields() {
   const num = id => parseFloat(String($(id).value).replace(',', '.'));
-  return {name: $('ort-name').value.trim(), typ: $('ort-typ').value, lat: num('ort-lat'), lon: num('ort-lon'), alt: num('ort-alt')};
+  return {name: $('place-name').value.trim(), type: $('place-type').value, lat: num('place-lat'), lon: num('place-lon'), alt: num('place-alt')};
 }
-let ortAltAuto = true, ortElevSeq = 0;
-async function ortLookupElevation(lat, lon) {
-  const seq = ++ortElevSeq;
-  $('ort-elev').textContent = T('Looking up ground elevation …');
+let placeAltAuto = true, placeElevSeq = 0;
+async function placeLookupElevation(lat, lon) {
+  const seq = ++placeElevSeq;
+  $('place-elev').textContent = T('Looking up ground elevation …');
   try {
     const r = await fetch(`/api/elevation?lat=${lat}&lon=${lon}`, {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
     const j = await r.json();
-    if (seq !== ortElevSeq) return;
-    if (!j.ok) { $('ort-elev').textContent = T('Ground elevation not available ({error})', {error: j.error ? msgText(j.error) : String(r.status)}); return; }
+    if (seq !== placeElevSeq) return;
+    if (!j.ok) { $('place-elev').textContent = T('Ground elevation not available ({error})', {error: j.error ? msgText(j.error) : String(r.status)}); return; }
     const g = Math.round(j.alt);
-    const lm = $('ort-typ').value === 'landmarke';
-    $('ort-elev').innerHTML = `${esc(T('Ground'))}: <b>${g} m</b> ${esc(T('above sea level'))} <span class="hint">(${esc(j.source)})</span>` +
+    const lm = $('place-type').value === 'landmark';
+    $('place-elev').innerHTML = `${esc(T('Ground'))}: <b>${g} m</b> ${esc(T('above sea level'))} <span class="hint">(${esc(j.source)})</span>` +
       (lm ? `<br><span class="warn">${esc(T('Landmark: add the height of the building or spire.'))}</span>` : '');
-    if (ortAltAuto) { $('ort-alt').value = g; }
+    if (placeAltAuto) { $('place-alt').value = g; }
   } catch (e) {
-    if (seq === ortElevSeq) $('ort-elev').textContent = T('Ground elevation not available (no internet?)');
+    if (seq === placeElevSeq) $('place-elev').textContent = T('Ground elevation not available (no internet?)');
   }
 }
-function ortSetPos(lat, lon, alt) {
-  $('ort-lat').value = lat.toFixed(6); $('ort-lon').value = lon.toFixed(6);
-  $('ort-barpos').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  if (alt != null) $('ort-alt').value = Math.round(alt);
-  if (ortMap) { ortMarker.setLatLng([lat, lon]); if (!ortMarker._map) ortMarker.addTo(ortMap); }
+function placeSetPos(lat, lon, alt) {
+  $('place-lat').value = lat.toFixed(6); $('place-lon').value = lon.toFixed(6);
+  $('place-barpos').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  if (alt != null) $('place-alt').value = Math.round(alt);
+  if (placeMap) { placeMarker.setLatLng([lat, lon]); if (!placeMarker._map) placeMarker.addTo(placeMap); }
 }
-async function initOrtMap() {
-  if (ortMap) { ortMap.invalidateSize(); return; }
-  try { await loadLeaflet(); } catch (e) { $('ort-maphint').textContent = T('Map library not available – type the coordinates.'); return; }
+async function initPlaceMap() {
+  if (placeMap) { placeMap.invalidateSize(); return; }
+  try { await loadLeaflet(); } catch (e) { $('place-maphint').textContent = T('Map library not available – type the coordinates.'); return; }
   const c = S ? [S.observer.lat, S.observer.lon] : [51, 10];
-  ortMap = L.map('ort-map', {zoomControl: true}).setView(c, 12);
+  placeMap = L.map('place-map', {zoomControl: true}).setView(c, 12);
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'});
   const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                           {maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'});
   const layers = {}; layers[T('Map')] = osm; layers[T('Satellite')] = sat;
-  const pref = storeGet('nexplane-ort-layer') === 'sat' ? sat : osm;
-  pref.addTo(ortMap);
-  L.control.layers(layers, null, {position: 'topright'}).addTo(ortMap);
-  ortMap.on('baselayerchange', e => storeSet('nexplane-ort-layer', e.layer === sat ? 'sat' : 'osm'));
-  ortLayer = L.layerGroup().addTo(ortMap);
-  ortMarker = L.marker(c, {draggable: true});
-  ortMarker.on('dragend', () => { const p = ortMarker.getLatLng(); ortSetPos(p.lat, p.lng, null); ortLookupElevation(p.lat, p.lng); });
-  ortMap.on('click', e => { ortSetPos(e.latlng.lat, e.latlng.lng, null); ortLookupElevation(e.latlng.lat, e.latlng.lng); });
-  renderOrtList(S && S.location);
+  const pref = storeGet('nexplane-place-layer') === 'sat' ? sat : osm;
+  pref.addTo(placeMap);
+  L.control.layers(layers, null, {position: 'topright'}).addTo(placeMap);
+  placeMap.on('baselayerchange', e => storeSet('nexplane-place-layer', e.layer === sat ? 'sat' : 'osm'));
+  placeLayer = L.layerGroup().addTo(placeMap);
+  placeMarker = L.marker(c, {draggable: true});
+  placeMarker.on('dragend', () => { const p = placeMarker.getLatLng(); placeSetPos(p.lat, p.lng, null); placeLookupElevation(p.lat, p.lng); });
+  placeMap.on('click', e => { placeSetPos(e.latlng.lat, e.latlng.lng, null); placeLookupElevation(e.latlng.lat, e.latlng.lng); });
+  renderPlaceList(S && S.location);
 }
-function renderOrtList(Lc) {
+function renderPlaceList(Lc) {
   if (!Lc) return;
-  const rows = Lc.presets.map(p => `<tr><td>${p.typ === 'landmarke' ? '◎' : '⌂'}</td><td>${esc(p.name)}${p.name === Lc.current ? ` <b>${esc(T('(active)'))}</b>` : ''}</td>` +
+  const rows = Lc.presets.map(p => `<tr><td>${p.type === 'landmark' ? '◎' : '⌂'}</td><td>${esc(p.name)}${p.name === Lc.current ? ` <b>${esc(T('(active)'))}</b>` : ''}</td>` +
     `<td>${fmt(p.lat, 4)}, ${fmt(p.lon, 4)}, ${fmt(p.alt, 0)} m</td><td style="text-align:right;white-space:nowrap">` +
-    (p.own ? `<button class="btn" data-ortedit="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Edit'))}">✎</button> ` +
-             (p.name !== Lc.current ? `<button class="btn" data-ortdel="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Delete'))}">✕</button>` : '')
+    (p.own ? `<button class="btn" data-placeedit="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Edit'))}">✎</button> ` +
+             (p.name !== Lc.current ? `<button class="btn" data-placedel="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Delete'))}">✕</button>` : '')
            : `<span class="hint" title="${esc(T('Defined in config.yaml'))}">config</span>`) + '</td></tr>').join('');
-  $('ort-list').innerHTML = '<table style="width:100%"><tbody>' + rows + `</tbody></table><div class="hint">${esc(T('⌂ location · ◎ landmark'))}</div>`;
-  if (ortLayer) {
-    ortLayer.clearLayers();
-    Lc.presets.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 5, color: p.typ === 'landmarke' ? '#e0a020' : '#3a8ee6'})
-      .bindTooltip(p.name).addTo(ortLayer));
+  $('place-list').innerHTML = '<table style="width:100%"><tbody>' + rows + `</tbody></table><div class="hint">${esc(T('⌂ location · ◎ landmark'))}</div>`;
+  if (placeLayer) {
+    placeLayer.clearLayers();
+    Lc.presets.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 5, color: p.type === 'landmark' ? '#e0a020' : '#3a8ee6'})
+      .bindTooltip(p.name).addTo(placeLayer));
   }
 }
-$('ort-edit').addEventListener('toggle', () => { if ($('ort-edit').open) initOrtMap(); });
-$('ort-alt').addEventListener('input', () => { ortAltAuto = $('ort-alt').value.trim() === ''; });
-function ortFull(on) {
-  $('ort-wrap').classList.toggle('full', on);
-  $('ort-fs').textContent = on ? '✕' : '⛶';
-  $('ort-fs').title = on ? T('Exit full screen') : T('Full screen');
-  if (ortMap) setTimeout(() => ortMap.invalidateSize(), 50);
+$('place-edit').addEventListener('toggle', () => { if ($('place-edit').open) initPlaceMap(); });
+$('place-alt').addEventListener('input', () => { placeAltAuto = $('place-alt').value.trim() === ''; });
+function placeFull(on) {
+  $('place-wrap').classList.toggle('full', on);
+  $('place-fs').textContent = on ? '✕' : '⛶';
+  $('place-fs').title = on ? T('Exit full screen') : T('Full screen');
+  if (placeMap) setTimeout(() => placeMap.invalidateSize(), 50);
 }
-$('ort-fs').onclick = () => ortFull(!$('ort-wrap').classList.contains('full'));
-$('ort-fs-done').onclick = () => ortFull(false);
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ort-wrap').classList.contains('full')) { ortFull(false); e.stopPropagation(); } }, true);
-$('ort-gps').onclick = () => {
+$('place-fs').onclick = () => placeFull(!$('place-wrap').classList.contains('full'));
+$('place-fs-done').onclick = () => placeFull(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('place-wrap').classList.contains('full')) { placeFull(false); e.stopPropagation(); } }, true);
+$('place-gps').onclick = () => {
   const f = S && S.gps && S.gps.fix;
   if (!f) { addLocalMsg(T('No GPS position available ({status}).', {status: S && S.gps ? S.gps.status : {t: 'GPS off'}})); return; }
-  ortSetPos(f.lat, f.lon, f.alt); ortAltAuto = false; $('ort-elev').textContent = T('Altitude taken from GPS.');
-  if (ortMap) ortMap.setView([f.lat, f.lon], 15);
-  if (!$('ort-name').value) $('ort-name').value = 'GPS ' + new Date().toLocaleDateString(LOCALE());
+  placeSetPos(f.lat, f.lon, f.alt); placeAltAuto = false; $('place-elev').textContent = T('Altitude taken from GPS.');
+  if (placeMap) placeMap.setView([f.lat, f.lon], 15);
+  if (!$('place-name').value) $('place-name').value = 'GPS ' + new Date().toLocaleDateString(LOCALE());
 };
-function ortSave(activate) {
-  const f = ortFields();
+function placeSave(activate) {
+  const f = placeFields();
   if (!f.name) { addLocalMsg(T('Please enter a name.')); return; }
   if ([f.lat, f.lon].some(isNaN)) { addLocalMsg(T('Please enter latitude and longitude (click the map, GPS or type).')); return; }
   if (isNaN(f.alt)) { addLocalMsg(T('Please enter the altitude in metres.')); return; }
   if (activate) {
-    if (f.typ !== 'standort') { addLocalMsg(T('Only a location can be activated.')); return; }
+    if (f.type !== 'location') { addLocalMsg(T('Only a location can be activated.')); return; }
     if (!confirm(T('Save “{name}” and use it as location? NexPlane restarts for this; align again afterwards.', {name: f.name}))) return;
   }
-  api('ort_save', {...f, activate});
+  api('place_save', {...f, activate});
 }
-$('ort-save').onclick = () => ortSave(false);
-$('ort-save-act').onclick = () => ortSave(true);
-$('ort-list').addEventListener('click', e => {
-  const d = e.target.closest('[data-ortdel]'), ed = e.target.closest('[data-ortedit]');
-  if (d && confirm(T('Delete “{name}”?', {name: d.dataset.ortdel}))) api('ort_delete', {name: d.dataset.ortdel});
+$('place-save').onclick = () => placeSave(false);
+$('place-save-act').onclick = () => placeSave(true);
+$('place-list').addEventListener('click', e => {
+  const d = e.target.closest('[data-placedel]'), ed = e.target.closest('[data-placeedit]');
+  if (d && confirm(T('Delete “{name}”?', {name: d.dataset.placedel}))) api('place_delete', {name: d.dataset.placedel});
   if (ed && S) {
-    const p = S.location.presets.find(q => q.name === ed.dataset.ortedit); if (!p) return;
-    $('ort-name').value = p.name; $('ort-typ').value = p.typ; ortSetPos(p.lat, p.lon, p.alt); ortAltAuto = false; $('ort-elev').textContent = '';
-    if (ortMap) ortMap.setView([p.lat, p.lon], 15);
+    const p = S.location.presets.find(q => q.name === ed.dataset.placeedit); if (!p) return;
+    $('place-name').value = p.name; $('place-type').value = p.type; placeSetPos(p.lat, p.lon, p.alt); placeAltAuto = false; $('place-elev').textContent = '';
+    if (placeMap) placeMap.setView([p.lat, p.lon], 15);
   }
 });
 

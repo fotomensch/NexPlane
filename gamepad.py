@@ -33,14 +33,14 @@ ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
 FF_RUMBLE = 0x50
 
 BUTTONS = {
-    0x130: 'kreuz',      # BTN_SOUTH
-    0x131: 'kreis',      # BTN_EAST
-    0x133: 'dreieck',    # BTN_NORTH
-    0x134: 'quadrat',    # BTN_WEST
+    0x130: 'cross',      # BTN_SOUTH
+    0x131: 'circle',     # BTN_EAST
+    0x133: 'triangle',   # BTN_NORTH
+    0x134: 'square',     # BTN_WEST
     0x136: 'l1',         # BTN_TL
     0x137: 'r1',         # BTN_TR
-    0x138: 'l2_taste',   # BTN_TL2
-    0x139: 'r2_taste',   # BTN_TR2
+    0x138: 'l2_button',  # BTN_TL2
+    0x139: 'r2_button',  # BTN_TR2
     0x13a: 'share',      # BTN_SELECT
     0x13b: 'options',    # BTN_START
     0x13c: 'ps',         # BTN_MODE
@@ -108,7 +108,7 @@ class Gamepad:
       axes()          -> {'lx','ly','rx','ry': -1..1 (dead zone applied, y up is positive),
                           'l2','r2': 0..1}
       pop_presses()   -> list of buttons pressed since the last call
-                         (names from BUTTONS plus 'hoch','runter','links','rechts' for the D-pad)
+                         (names from BUTTONS plus 'up', 'down', 'left', 'right' for the D-pad)
       connected, name, error
     After a disconnect (Bluetooth) the device is searched for again automatically.
     '''
@@ -258,9 +258,9 @@ class Gamepad:
             self.hat[code] = value
             if value != 0 and value != old:
                 if code == ABS_HAT0X:
-                    name = 'rechts' if value > 0 else 'links'
+                    name = 'right' if value > 0 else 'left'
                 else:
-                    name = 'runter' if value > 0 else 'hoch'
+                    name = 'down' if value > 0 else 'up'
                 with self.lock:
                     self.presses.append(name)
 

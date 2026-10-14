@@ -35,7 +35,7 @@ if mode == 'erst':
     req('/api/set_focal', {'mm': 150}); time.sleep(0.5)
     press(0x130); s = st()
     check(s['manual']['aligned'] and 'aircraft' in en(s['manual']['aligned_text']), f"✕: ausgerichtet ({en(s['manual']['aligned_text'])}) | {msg()[:90]}")
-    check(os.path.exists('home_richtung.yaml'), 'Home-Richtung gespeichert')
+    check(os.path.exists('home_direction.yaml'), 'Home-Richtung gespeichert')
     check(s['correction']['model']['list'][0]['focal'] == 150, 'Punkt 1 mit Brennweite 150 mm')
     time.sleep(15); s = st()
     a, b = s['telescope'], s['tracked_now']

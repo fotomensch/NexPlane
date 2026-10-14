@@ -70,7 +70,7 @@ def get_settings(config_data: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(profiles, dict):
         raise LimitError(Msg('axis_limits.profiles must map profile names to file names.'))
     if not profiles and settings.get('file'):
-        profiles = {'standard': settings['file']}
+        profiles = {'default': settings['file']}
     settings['profiles'] = dict(profiles)
     if profiles:
         active = settings.get('profile') or next(iter(profiles))
@@ -284,7 +284,7 @@ class AxisLimitGuard:
         self.poly: list[Point] = []
         self.holes: list[list[Point]] = []
         self.home: Point = (0.0, 0.0)
-        self.profile = str(settings.get('profile') or 'standard')
+        self.profile = str(settings.get('profile') or 'default')
         self._load_geometry(limits)
         self.margin = rad(float(settings['margin_degrees']))
         # Path of the active limits file (for refining and saving from the browser)

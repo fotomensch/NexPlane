@@ -49,12 +49,12 @@ def actions(pg):
     pg.fill('#align-sky', 'polaris')
     click(pg, '#btn-align')                                  # too close to the pole -> refused by NexPlane
     pg.wait_for_timeout(1500)
-    click(pg, '#ort-edit summary')
-    click(pg, '#ort-save')                                   # no name -> local message
-    pg.fill('#ort-name', 'x' * 3)
-    pg.fill('#ort-lat', '95'); pg.fill('#ort-lon', '10'); pg.fill('#ort-alt', '100')
-    click(pg, '#ort-save')                                   # latitude out of range -> refused by NexPlane
-    click(pg, '#ort-gps')                                    # no GPS -> local message
+    click(pg, '#place-edit summary')
+    click(pg, '#place-save')                                   # no name -> local message
+    pg.fill('#place-name', 'x' * 3)
+    pg.fill('#place-lat', '95'); pg.fill('#place-lon', '10'); pg.fill('#place-alt', '100')
+    click(pg, '#place-save')                                   # latitude out of range -> refused by NexPlane
+    click(pg, '#place-gps')                                    # no GPS -> local message
     click(pg, '#refine-box summary')                         # refine limits panel
     pg.wait_for_timeout(1500)
     click(pg, '#refine-add')                                 # inside the outline -> refused

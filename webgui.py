@@ -105,7 +105,7 @@ class WebGui:
         self.location_request: str | None = None
         self.location_types: dict[str, str] = {}
         self.location_own: set[str] = set()
-        self.orte_queue: list[dict[str, Any]] = []
+        self.place_queue: list[dict[str, Any]] = []
         self.gps_reader: Any = None
         self.profiles: list[str] = []
         self.profile = ''
@@ -260,9 +260,9 @@ class WebGui:
     def set_gps(self, reader: Any) -> None:
         self.gps_reader = reader
 
-    def pop_orte_requests(self) -> list[dict[str, Any]]:
+    def pop_place_requests(self) -> list[dict[str, Any]]:
         with self.lock:
-            q, self.orte_queue = self.orte_queue, []
+            q, self.place_queue = self.place_queue, []
             return q
 
     def set_profiles(self, names: list[str], active: str) -> None:
@@ -447,7 +447,7 @@ class WebGui:
                           'status': to_json(self.reach_status)},
                 'location': {'current': self.location,
                              'presets': [{'name': n, 'lat': v[0], 'lon': v[1], 'alt': v[2],
-                                          'typ': self.location_types.get(n, 'standort'),
+                                          'type': self.location_types.get(n, 'location'),
                                           'own': n in self.location_own}
                                          for n, v in self.location_presets.items()]},
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
@@ -584,22 +584,22 @@ class WebGui:
                 self.jog_rates = (0.0, 0.0)
                 self.profile_request = prof
                 return {'ok': True}
-            if name in ('ort_save', 'ort_delete'):
+            if name in ('place_save', 'place_delete'):
                 req: dict[str, Any] = {'cmd': name, 'name': str(data.get('name', '')).strip()}
-                if name == 'ort_save':
+                if name == 'place_save':
                     try:
-                        req.update({'typ': str(data.get('typ', 'standort')), 'lat': float(data['lat']),
+                        req.update({'type': str(data.get('type', 'location')), 'lat': float(data['lat']),
                                     'lon': float(data['lon']), 'alt': float(data.get('alt', 0.0)),
                                     'activate': bool(data.get('activate', False))})
                     except (KeyError, TypeError, ValueError):
                         return _error(Msg('Enter latitude, longitude and altitude as numbers'))
-                self.orte_queue.append(req)
+                self.place_queue.append(req)
                 return {'ok': True}
             if name == 'set_location':
                 loc = data.get('name')
                 if not isinstance(loc, str) or loc not in self.location_presets:
                     return _error(Msg('Unknown location'))
-                if self.location_types.get(loc) == 'landmarke':
+                if self.location_types.get(loc) == 'landmark':
                     return _error(Msg('This is a landmark, not a location'))
                 if loc == self.location:
                     return _error(Msg('This location is already active'))

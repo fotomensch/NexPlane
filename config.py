@@ -41,9 +41,9 @@ def read_config(extra_configs: list[str]) -> dict[str, Any]:
     except FileNotFoundError:
         pass
 
-    # Add locations/landmarks created in the browser (orte.yaml)
+    # Add locations/landmarks created in the browser (places.yaml)
     try:
-        with open(os.path.join(main_config_dir(), 'orte.yaml')) as f:
+        with open(os.path.join(main_config_dir(), 'places.yaml')) as f:
             extra = yaml.safe_load(f.read()) or {}
         if isinstance(extra.get('locations'), dict):
             data = merge_config(data, {'locations': extra['locations']})

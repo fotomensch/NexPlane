@@ -110,7 +110,7 @@ class PadControl:
 
     def step(self, press: str) -> tuple[float, float] | None:
         st = math.radians(float(self.s['step_degrees']))
-        vec = {'hoch': (0, 1), 'runter': (0, -1), 'links': (-1, 0), 'rechts': (1, 0)}.get(press)
+        vec = {'up': (0, 1), 'down': (0, -1), 'left': (-1, 0), 'right': (1, 0)}.get(press)
         if vec is None:
             return None
         x, y = self._image_vec(float(vec[0]), float(vec[1]))
@@ -287,17 +287,18 @@ def pick_aim(planes: dict[str, Any], current: str | None, recent: list[str], min
 
 class TrackLog:
     '''While tracking, writes about 5 rows per second plus all applied corrections.'''
-    FIELDS = ['zeit', 'hex', 'kennung', 'flug_az', 'flug_el', 'entfernung_m', 'flug_az_rate', 'flug_el_rate',
-              'tele_az', 'tele_el', 'seite', 'ra_raw', 'dec_raw', 'korr_ra', 'korr_dec', 'ra_cal', 'dec_cal']
-    SYNC_FIELDS = ['zeit', 'hex', 'kennung', 'flug_az', 'flug_el', 'ra_raw', 'dec_raw',
-                   'ra_cal_vorher', 'dec_cal_vorher', 'korr_ra', 'korr_dec', 'ra_cal_neu', 'dec_cal_neu',
-                   'punkte', 'modell_aktiv', 'rest_grad', 'pol_hoch_grad', 'pol_ost_grad', 'kegel_grad']
+    # Angles in degrees, time as Unix time
+    FIELDS = ['time', 'hex', 'callsign', 'plane_az', 'plane_el', 'range_m', 'plane_az_rate', 'plane_el_rate',
+              'scope_az', 'scope_el', 'side', 'ra_raw', 'dec_raw', 'corr_ra', 'corr_dec', 'ra_cal', 'dec_cal']
+    SYNC_FIELDS = ['time', 'hex', 'callsign', 'plane_az', 'plane_el', 'ra_raw', 'dec_raw',
+                   'ra_cal_before', 'dec_cal_before', 'corr_ra', 'corr_dec', 'ra_cal_after', 'dec_cal_after',
+                   'points', 'model_active', 'residual', 'polar_high', 'polar_east', 'cone']
 
     def __init__(self, directory: str, interval_s: float = 0.2):
         os.makedirs(directory, exist_ok=True)
         stamp = time.strftime('%Y%m%d_%H%M%S')
-        self.path = os.path.join(directory, f'verfolgung_{stamp}.csv')
-        self.sync_path = os.path.join(directory, 'ausrichtpunkte.csv')
+        self.path = os.path.join(directory, f'tracking_{stamp}.csv')
+        self.sync_path = os.path.join(directory, 'sync_points.csv')
         self.interval = interval_s
         self.last = 0.0
         self.f: Any = None

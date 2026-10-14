@@ -36,7 +36,7 @@ Die meisten enden mit `FEHLER: keine` bzw. `Fehler: 0`. Aus einem leeren Arbeits
 # 1. Kopie anlegen
 rm -rf /tmp/np-sim && cp -r /home/linux/nexplane/NexPlane /tmp/np-sim
 cp /home/linux/nexplane/NexPlane/devtests/sim/*.py /tmp/np-sim/
-cd /tmp/np-sim && rm -f home_richtung.yaml orte.yaml
+cd /tmp/np-sim && rm -f home_direction.yaml places.yaml
 
 # 2. Simulator-Config (Ort 51.5 N / 7.5 E, Limits ±60°/±50°, Flugzeuge von Port 30013)
 /home/linux/myvenv/bin/python3 mkcfg.py
@@ -62,7 +62,7 @@ printf 'web_port: 8802\n' >> config.yaml
 | `pad_it.py`, `stick_it.py` | Gamepad-Belegung, Korrektur beim Verfolgen | Gamepad-FIFO, Flugzeuge |
 | `aim_it.py`, `model_it.py` | Ausrichtung ohne Landmarke, Polfehler-Modell | Flugzeuge, ggf. FIFO |
 | `lang_ui.py` | Alle Texte in der gewählten Sprache (DE/EN), auch Meldungen; `-v` zeigt sie an | Playwright |
-| `orte_ui.py`, `elev_ui.py`, `fs_ui.py` | Orte-Editor, Höhenabfrage, Vollbild | Playwright |
+| `places_ui.py`, `elev_ui.py`, `fs_ui.py` | Orte-Editor, Höhenabfrage, Vollbild | Playwright; `places_ui.py` nutzt `sim/fakebin/mmcli` (GPS) im `PATH` |
 
 UI-Tests brauchen `pip install playwright` und einen Chromium (`playwright install chromium`).
 Einige Skripte setzen einen frisch gestarteten Simulator voraus (Montierung in Home); bei Bedarf

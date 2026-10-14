@@ -43,7 +43,7 @@ hat(0x11, -1); c3 = st()['correction']; check(c3['dec'] != 0, f'Steuerkreuz hoch
 align_before = open('testflip_align.yaml').read()
 press(0x130); s = st()
 check(s['correction']['ra'] == 0 and open('testflip_align.yaml').read() != align_before, f'Kreuz: uebernommen und gespeichert | {msgs(1)}')
-check(os.path.exists('protokolle/ausrichtpunkte.csv'), 'ausrichtpunkte.csv geschrieben')
+check(os.path.exists('logs/sync_points.csv'), 'sync_points.csv geschrieben')
 check(st()['tracked'] == first, 'Verfolgung laeuft nach dem Uebernehmen weiter')
 hat(0x10, 1); press(0x131); c = st()['correction']; check(c['ra'] == 0.0 and c['dec'] == 0.0, f'Kreis: Korrektur 0 | {msgs(1)}')
 req('/api/offset', {'daz': 0.1, 'del': 0}); time.sleep(1.2); c = st()['correction']; check(abs(c['ra']) > 0, f'Browser-Taste D -> {c}')
@@ -55,6 +55,6 @@ ev(3, 1, 0); time.sleep(2.0); ev(3, 1, 128); time.sleep(2.0); t1 = st()['telesco
 d = math.degrees(math.acos(min(1, math.sin(math.radians(t0['el']))*math.sin(math.radians(t1['el'])) + math.cos(math.radians(t0['el']))*math.cos(math.radians(t1['el']))*math.cos(math.radians(t0['az']-t1['az'])))))
 check(1.0 < d < 4.0, f'Stick ohne Ziel faehrt die Montierung: {d:.2f} Grad in 2 s (1 Grad/s)')
 time.sleep(1.5); t2 = st()['telescope']; check(abs(t2['az']-t1['az']) < 0.05 and abs(t2['el']-t1['el']) < 0.05, 'Stick losgelassen: steht')
-logs = glob.glob('protokolle/verfolgung_*.csv'); n = sum(1 for _ in open(logs[0])) if logs else 0
+logs = glob.glob('logs/tracking_*.csv'); n = sum(1 for _ in open(logs[0])) if logs else 0
 check(n > 50, f'Verfolgungsprotokoll: {n} Zeilen')
 print('FEHLER:', fails or 'keine')
