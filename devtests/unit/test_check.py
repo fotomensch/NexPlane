@@ -24,7 +24,7 @@ try:
     pump(4)
     for _ in range(4): c.send('+'); pump(0.1)
     t = time.time()
-    while time.time() - t < 6: c.send('\x1b[C'); pump(0.05)      # 6 s rechts mit 5 Grad/s
+    while time.time() - t < 6: c.send('\x1bOC'); pump(0.05)      # 6 s rechts mit 5 Grad/s
     pump(2)
     c.send('m'); pump(0.5)
     print(text())

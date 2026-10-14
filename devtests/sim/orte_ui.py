@@ -9,6 +9,7 @@ async def main():
         b = await p.chromium.launch(); pg = await b.new_page(viewport={'width': 1400, 'height': 1400})
         errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
         pg.on('dialog', lambda d: asyncio.ensure_future(d.accept()))
+        await pg.add_init_script("localStorage.setItem('nexplane-lang', 'de');")   # the checks below read German texts
         await pg.goto('http://127.0.0.1:8802/'); await pg.wait_for_timeout(8000)
         gps = await pg.inner_text('#loc-gps'); print('   GPS-Zeile:', gps)
         check('51,51' in gps and 'vom Standort' in gps, 'GPS-Position wird angezeigt')
@@ -40,7 +41,7 @@ async def main():
         o = yaml.safe_load(open('orte.yaml'))['locations']
         check('Kirchturm Test' not in o, 'Löschen entfernt den Eintrag')
         await pg.fill('#ort-name', 'testort'); await pg.click('#ort-save'); await pg.wait_for_timeout(2000)
-        msgs = await pg.evaluate('S.messages.map(m => m.text)')
+        msgs = await pg.evaluate('S.messages.map(m => msgText(m.text))')
         check(any('config.yaml' in m for m in msgs[-2:]), 'Name aus config.yaml wird nicht überschrieben: ' + msgs[-1][:80])
         await pg.locator('#loc-card').screenshot(path='orte_card.png')
         await pg.fill('#ort-name', 'Feld Nord'); await pg.click('#ort-save-act'); await pg.wait_for_timeout(9000)

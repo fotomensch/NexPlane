@@ -8,7 +8,7 @@ async def main():
         await pg.evaluate("document.querySelectorAll('aside .card').forEach(c => c.classList.remove('collapsed'))")
         await pg.click('#ort-edit summary'); await pg.wait_for_timeout(1500)
         await pg.evaluate("""() => { const f = window.fetch; window.fetch = (u, o) => String(u).startsWith('/api/elevation') ?
-            Promise.resolve(new Response(JSON.stringify({ok: true, alt: 121.4, quelle: 'EU-DEM 25 m (OpenTopoData)'}))) : f(u, o); }""")
+            Promise.resolve(new Response(JSON.stringify({ok: true, alt: 121.4, source: 'EU-DEM 25 m (OpenTopoData)'}))) : f(u, o); }""")
         await pg.select_option('#ort-typ', 'landmarke')
         bb = await pg.locator('#ort-map').bounding_box()
         print('bb', bb); await pg.mouse.click(bb['x'] + 100, bb['y'] + 100); await pg.wait_for_timeout(1000); print('lat:', await pg.input_value('#ort-lat'), '| nach Klick:', await pg.inner_text('#ort-elev')); await pg.wait_for_timeout(500)

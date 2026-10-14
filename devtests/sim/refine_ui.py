@@ -3,6 +3,12 @@ from playwright.async_api import async_playwright
 base='http://127.0.0.1:8802'
 def tok(): return re.search(r"TOKEN = '([^']+)'", urllib.request.urlopen(base + '/').read().decode()).group(1)
 fails=[]
+def en(m):
+    '''Message from the state (template + parameters, see messages.py) as English text.'''
+    if isinstance(m, dict):
+        p = m.get('p', {})
+        return re.sub(r'\{(\w+)(?::[^}]*)?\}', lambda x: en(p.get(x.group(1), x.group(0))), m['t'])
+    return str(m)
 def check(c, m):
     print(('OK   ' if c else 'FEHL ') + m)
     if not c: fails.append(m)
@@ -37,7 +43,7 @@ async def main():
         st = req('/api/state')['refine']; check(st['unsaved'] == 1, 'ein ungespeicherter Punkt')
         await pg.click('#refine-save'); await pg.wait_for_timeout(1500)
         check(os.path.exists('testflip_limits.yaml.bak'), 'gespeichert, .bak vorhanden')
-        print('Meldungen:', [m['text'][:80] for m in req('/api/state')['messages']][-3:])
+        print('Meldungen:', [en(m['text'])[:80] for m in req('/api/state')['messages']][-3:])
         print('JS-Fehler:', errs); check(not errs, 'keine JS-Fehler')
         await b.close()
 asyncio.run(main())

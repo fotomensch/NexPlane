@@ -22,7 +22,7 @@ def run(r, secs):
 p = run(rad(2), 4); check(p < 4.2, f'mit Ueberwachung: Stopp vor Rand bei {p:.2f} Grad')
 g.set_bypass(True)
 p = run(rad(2), 3); check(p > 6, f'abgeschaltet: faehrt ueber Rand hinaus bis {p:.2f} Grad')
-w = g.set_bypass(False); check(w is not None and 'ausserhalb' in w, f'Einschalten ausserhalb meldet: {w}')
+w = g.set_bypass(False); check(w is not None and 'outside' in str(w), f'Einschalten ausserhalb meldet: {w}')
 p2 = run(rad(2), 2); check(abs(p2-p) < 0.1, f'wieder aktiv: weiter nach aussen gesperrt ({p:.2f} -> {p2:.2f})')
 p3 = run(rad(-2), 2); check(p3 < p2-0.5, f'zurueck nach innen erlaubt ({p2:.2f} -> {p3:.2f})')
 g.set_bypass(True); p4 = run(rad(2), 3)

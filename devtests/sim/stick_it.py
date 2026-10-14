@@ -10,7 +10,7 @@ w = os.open('padfifo', os.O_WRONLY)
 ev = lambda t, c, v: os.write(w, struct.pack(gamepad.EVENT_FMT, 0, 0, t, c, v))
 time.sleep(4); print(req('/api/track', {'hex': '0x0aa0001'})); time.sleep(30)
 t_stick = time.time(); ev(3, 0, 255); time.sleep(3); ev(3, 0, 128); t_end = time.time()
-time.sleep(8); s = req('/api/state'); print('Korrektur', s['correction']['ra'], s['correction']['dec']); req('/api/stop')
+time.sleep(8); s = req('/api/state'); print('Korrektur', s['correction']['ra'], s['correction']['dec']); req('/api/stop', {})
 rows = list(csv.DictReader(open(glob.glob('protokolle/verfolgung_*.csv')[0])))
 for r in rows:
     t = float(r['zeit'])

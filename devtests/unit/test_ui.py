@@ -10,7 +10,7 @@ def pump(t=0.3):
         try: stream.feed(c.read_nonblocking(65536, timeout=0.05))
         except pexpect.TIMEOUT: pass
 def text(): return '\n'.join(l.rstrip() for l in screen.display if l.strip())
-R, L, U, D = '\x1b[C', '\x1b[D', '\x1b[A', '\x1b[B'
+R, L, U, D = '\x1bOC', '\x1bOD', '\x1bOA', '\x1bOB'   # keypad (application) mode, as in terminfo
 def hold(k, s):
     t = time.time()
     while time.time() - t < s: c.send(k); pump(0.05)
@@ -22,7 +22,7 @@ hold(U, 2.0); c.send('m'); pump()
 hold(L, 3.0); c.send('m'); pump()
 hold(D, 2.0); c.send('m'); pump()
 c.send('g'); pump(1.0); print(text()); print('-----')
-c.send('q'); pump(); print([l for l in text().splitlines() if 'gespeichert' in l.lower()])
-c.send('s'); pump(); print([l for l in text().splitlines() if 'Gespeichert' in l])
+c.send('q'); pump(); print([l for l in text().splitlines() if 'saved' in l.lower()])
+c.send('s'); pump(); print([l for l in text().splitlines() if 'Saved' in l])
 c.send('q'); c.expect(pexpect.EOF)
 print(open(out).read())

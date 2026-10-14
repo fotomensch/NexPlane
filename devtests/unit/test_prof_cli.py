@@ -1,7 +1,7 @@
 import pexpect, time, sys, pyte
 np_dir = sys.argv[1]
-for args, expect in [('--check --profile kamera', 'Profil kamera'), ('--check', 'Profil tubus'),
-                     ('--edit --profile tubus', 'Sperrzone(n)'), ('--profile gibtsnicht', 'gibt es nicht')]:
+for args, expect in [('--check --profile kamera', 'profile kamera'), ('--check', 'profile tubus'),
+                     ('--edit --profile tubus', 'exclusion zone(s)'), ('--profile gibtsnicht', 'does not exist')]:
     screen = pyte.Screen(130, 40); stream = pyte.ByteStream(screen)
     c = pexpect.spawn(f'python3 teach_limits.py --hootl --telescope-protocol skywatcher-mount-head-usb {args}',
                       cwd=np_dir, dimensions=(40, 130), timeout=20)

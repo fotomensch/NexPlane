@@ -26,6 +26,7 @@ Die meisten enden mit `FEHLER: keine` bzw. `Fehler: 0`. Aus einem leeren Arbeits
 | `test_prof_cli.py` | Profile auf der Kommandozeile |
 | `test_plot.py` | Vorschau-SVG; zweites Argument = Ausgabeverzeichnis |
 | `test_ui.py`, `test_ui_excl.py` | `teach_limits.py` im Terminal; braucht `pexpect`, `pyte`; zweites Argument = Ausgabedatei |
+| `test_i18n.py` | Jeder Text der Browser-GUI hat einen deutschen Eintrag in `i18n_de.js`; `--list` gibt alle Vorlagen aus |
 
 ## Simulator-Tests (`sim/`)
 
@@ -60,7 +61,8 @@ printf 'web_port: 8802\n' >> config.yaml
 | `refine_ui.py` | Grenzen verfeinern im Browser | Playwright |
 | `pad_it.py`, `stick_it.py` | Gamepad-Belegung, Korrektur beim Verfolgen | Gamepad-FIFO, Flugzeuge |
 | `aim_it.py`, `model_it.py` | Ausrichtung ohne Landmarke, Polfehler-Modell | Flugzeuge, ggf. FIFO |
-| `i18n_ui.py`, `orte_ui.py`, `elev_ui.py`, `fs_ui.py` | Englisch, Orte-Editor, Höhenabfrage, Vollbild | Playwright |
+| `lang_ui.py` | Alle Texte in der gewählten Sprache (DE/EN), auch Meldungen; `-v` zeigt sie an | Playwright |
+| `orte_ui.py`, `elev_ui.py`, `fs_ui.py` | Orte-Editor, Höhenabfrage, Vollbild | Playwright |
 
 UI-Tests brauchen `pip install playwright` und einen Chromium (`playwright install chromium`).
 Einige Skripte setzen einen frisch gestarteten Simulator voraus (Montierung in Home); bei Bedarf

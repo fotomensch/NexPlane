@@ -24,9 +24,9 @@ def drive(axis, d, secs):
 drive(1, +1, 2); t.mark()            # rechts
 drive(2, +1, 2); t.mark()            # rechts oben
 drive(1, -1, 4); t.mark()            # links oben
-t.save(); check('Home' in t.message, 'Teacher: Dreieck ohne Home im Inneren wird abgelehnt -> ' + t.message)
+t.save(); check('home' in t.message.lower(), 'Teacher: Dreieck ohne Home im Inneren wird abgelehnt -> ' + t.message)
 drive(2, -1, 4); t.mark()            # links unten -> Viereck
-t.save(); check('Gespeichert' in t.message, 'Teacher: Viereck speichern -> ' + t.message)
+t.save(); check('Saved' in t.message, 'Teacher: Viereck speichern -> ' + t.message)
 print('   ', t.status_lines())
 t.stop(); sim.close()
 
@@ -37,13 +37,13 @@ try:
         [(rad(-1),rad(-1)),(rad(1),rad(1)),(rad(1),rad(-1)),(rad(-1),rad(1))])
     check(False, 'Selbstueberkreuzung wird abgelehnt')
 except LimitError as e:
-    check('ueberkreuzt' in str(e), 'Selbstueberkreuzung wird abgelehnt')
+    check('crosses itself' in str(e), 'Selbstueberkreuzung wird abgelehnt')
 try:
     axis_limits.save_limits(os.path.join(tmp,'x.yaml'), {1:1,2:1}, {1:0,2:0},
         [(rad(1),rad(1)),(rad(3),rad(1)),(rad(3),rad(3))])
     check(False, 'Home ausserhalb wird abgelehnt')
 except LimitError as e:
-    check('Home' in str(e), 'Home ausserhalb wird abgelehnt')
+    check('home' in str(e).lower(), 'Home ausserhalb wird abgelehnt')
 
 sim = skywatcher.SkyWatcherSerialHootl(); m = skywatcher.SkyWatcher(sim)
 h1, h2 = m._inquire_position(1), m._inquire_position(2)
@@ -57,14 +57,14 @@ m._slew_axis(1, rad(3)); time.sleep(1.5); m._slew_axis(1, 0); time.sleep(1.5)
 try:
     AxisLimitGuard(m, lim, settings()); check(False, 'Home-Pruefung')
 except LimitError as e:
-    check('Home' in str(e), 'Home-Pruefung greift')
+    check('home' in str(e).lower(), 'Home-Pruefung greift')
 sim.close()
 bad = dict(lim); bad['cpr'] = {1: 9011200, 2: 9011200}
 sim = skywatcher.SkyWatcherSerialHootl(); m = skywatcher.SkyWatcher(sim)
 try:
     AxisLimitGuard(m, bad, settings()); check(False, 'cpr-Pruefung')
 except LimitError as e:
-    check('Schritte' in str(e), 'cpr-Pruefung greift (Simulator vs. echte Montierung)')
+    check('steps per revolution' in str(e), 'cpr-Pruefung greift (Simulator vs. echte Montierung)')
 sim.close()
 
 # --- 5) Verkehrte Drehrichtung ---
@@ -90,6 +90,6 @@ old = os.path.join(tmp, 'old.yaml'); yaml.safe_dump({'cpr':{1:1,2:1},'home_deg':
 try:
     axis_limits.load_limits(old); check(False, 'Altes Format')
 except LimitError as e:
-    check('alte' in str(e), 'Altes Dateiformat wird mit Hinweis abgelehnt')
+    check('old' in str(e), 'Altes Dateiformat wird mit Hinweis abgelehnt')
 
 print('\nERGEBNIS:', 'ALLE TESTS OK' if not fails else f'{len(fails)} FEHLER')

@@ -7,12 +7,18 @@ def req(path, data=None):
     r = urllib.request.Request(base + path, data=None if data is None else json.dumps(data).encode(),
                                headers={'X-NexPlane-Token': token, 'Content-Type': 'application/json'})
     return json.loads(urllib.request.urlopen(r).read())
+def en(m):
+    '''Message from the state (template + parameters, see messages.py) as English text.'''
+    if isinstance(m, dict):
+        p = m.get('p', {})
+        return re.sub(r'\{(\w+)(?::[^}]*)?\}', lambda x: en(p.get(x.group(1), x.group(0))), m['t'])
+    return str(m)
 w = os.open('padfifo', os.O_WRONLY)
 def ev(t, c, v): os.write(w, struct.pack(gamepad.EVENT_FMT, 0, 0, t, c, v))
 def press(code): ev(1, code, 1); ev(1, code, 0); time.sleep(1.5)
 def hat(code, v): ev(3, code, v); ev(3, code, 0); time.sleep(1.2)
 def st(): return req('/api/state')
-def msgs(n=2): return [m['text'][:100] for m in st()['messages']][-n:]
+def msgs(n=2): return [en(m['text'])[:100] for m in st()['messages']][-n:]
 fails=[]
 def check(c, m):
     print(('OK   ' if c else 'FEHL ') + m)
@@ -37,9 +43,9 @@ hat(0x11, -1); c3 = st()['correction']; check(c3['dec'] != 0, f'Steuerkreuz hoch
 align_before = open('testflip_align.yaml').read()
 press(0x130); s = st()
 check(s['correction']['ra'] == 0 and open('testflip_align.yaml').read() != align_before, f'Kreuz: uebernommen und gespeichert | {msgs(1)}')
-check(os.path.exists('protokolle/korrekturen.csv'), 'korrekturen.csv geschrieben')
+check(os.path.exists('protokolle/ausrichtpunkte.csv'), 'ausrichtpunkte.csv geschrieben')
 check(st()['tracked'] == first, 'Verfolgung laeuft nach dem Uebernehmen weiter')
-hat(0x10, 1); press(0x131); check(st()['correction'] == {'ra': 0.0, 'dec': 0.0}, f'Kreis: Korrektur 0 | {msgs(1)}')
+hat(0x10, 1); press(0x131); c = st()['correction']; check(c['ra'] == 0.0 and c['dec'] == 0.0, f'Kreis: Korrektur 0 | {msgs(1)}')
 req('/api/offset', {'daz': 0.1, 'del': 0}); time.sleep(1.2); c = st()['correction']; check(abs(c['ra']) > 0, f'Browser-Taste D -> {c}')
 press(0x137); s = st(); check(s['tracked'] not in (None, first), f'R1 naechstes Flugzeug: {s["tracked"]} | {msgs(1)}')
 press(0x136); s = st(); check(s['tracked'] == first, f'L1 zurueck: {s["tracked"]} | {msgs(1)}')

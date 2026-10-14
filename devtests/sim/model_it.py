@@ -7,10 +7,16 @@ def req(path, data=None):
     r = urllib.request.Request(base + path, data=None if data is None else json.dumps(data).encode(),
                                headers={'X-NexPlane-Token': token, 'Content-Type': 'application/json'})
     return json.loads(urllib.request.urlopen(r).read())
+def en(m):
+    '''Message from the state (template + parameters, see messages.py) as English text.'''
+    if isinstance(m, dict):
+        p = m.get('p', {})
+        return re.sub(r'\{(\w+)(?::[^}]*)?\}', lambda x: en(p.get(x.group(1), x.group(0))), m['t'])
+    return str(m)
 w = os.open('padfifo', os.O_WRONLY)
 def press(code): os.write(w, struct.pack(gamepad.EVENT_FMT, 0, 0, 1, code, 1) + struct.pack(gamepad.EVENT_FMT, 0, 0, 1, code, 0)); time.sleep(2.0)
 st = lambda: req('/api/state')
-msg = lambda: st()['messages'][-1]['text']
+msg = lambda: en(st()['messages'][-1]['text'])
 time.sleep(5)
 for hexid, wait in [('0x0aa0001', 0), ('0x0aa0002', 0), ('0x0aa0003', 0), ('0x0aa0004', 0)]:
     r = req('/api/track', {'hex': hexid}); t0 = time.time()

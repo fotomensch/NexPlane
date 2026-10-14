@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stand-in for ModemManager's mmcli in simulator tests: one modem with a GPS fix at 51.51 N, 7.5 E.
+case "$*" in
+  -L) echo "    /org/freedesktop/ModemManager1/Modem/0 [Dell] DW5821e Snapdragon X20 LTE" ;;
+  *--location-get*) echo "  3GPP |  operator code: 262"; echo "  GPS  |  nmea: \$GPGGA,120000.00,5130.6000,N,00730.0000,E,1,08,0.9,95.0,M,47.0,M,,*47" ;;
+  *) echo "successfully setup location gathering" ;;
+esac
