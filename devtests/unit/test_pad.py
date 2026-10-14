@@ -1,0 +1,26 @@
+import sys, os, time, struct, tempfile
+sys.path.insert(0, sys.argv[1])
+import gamepad
+fails=[]
+def check(c,m):
+    print(('OK   ' if c else 'FEHL ')+m)
+    if not c: fails.append(m)
+fifo = os.path.join(tempfile.mkdtemp(), 'ev'); os.mkfifo(fifo)
+pad = gamepad.Gamepad(path=fifo, deadzone=0.12)
+w = os.open(fifo, os.O_WRONLY)
+def ev(t, c, v): os.write(w, struct.pack(gamepad.EVENT_FMT, 0, 0, t, c, v))
+time.sleep(0.5); check(pad.connected, 'FIFO als Geraet verbunden')
+ev(3, 0, 255); ev(3, 1, 0); ev(3, 5, 128); ev(0, 0, 0); time.sleep(0.3)
+a = pad.axes(); check(abs(a['lx']-1) < 0.01 and abs(a['ly']-1) < 0.01 and abs(a['r2']-0.5) < 0.01, f'Achsen: Stick rechts-oben, R2 halb -> {a}')
+ev(3, 0, 130); ev(3, 1, 125); time.sleep(0.3)
+a = pad.axes(); check(a['lx'] == 0 and a['ly'] == 0, 'Totzone um die Mitte')
+ev(1, 0x130, 1); ev(1, 0x130, 0); ev(1, 0x137, 1); ev(3, 0x11, -1); ev(3, 0x11, 0); ev(3, 0x10, 1); time.sleep(0.3)
+p = pad.pop_presses(); check(p == ['kreuz', 'r1', 'hoch', 'rechts'], f'Tasten/Steuerkreuz: {p}')
+pad.rumble(); time.sleep(0.4); check(pad.connected, 'Vibration auf Geraet ohne Vibration: kein Absturz')
+ev(3, 0, 255); time.sleep(0.2); os.close(pad.fd); time.sleep(0.8)
+check(not pad.connected and 'unterbrochen' in pad.error, f'Trennung erkannt: {pad.error}')
+check(pad.axes()['lx'] == 0, 'nach Trennung Achsen 0 (keine Weiterfahrt)')
+time.sleep(3.5)
+check(pad.connected, 'automatisch wieder verbunden')
+pad.close(); os.close(w)
+print('FEHLER:', fails or 'keine')

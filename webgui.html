@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexPlane</title>
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<style>
+:root {
+  --bg: #0d1117; --panel: #161b22; --panel2: #1f2630; --line: #2d3540;
+  --text: #d6dde6; --muted: #8b96a3; --accent: #58a6ff;
+  --plane: #6ea8ff; --sat: #9aa4ae; --track: #ff8a3d; --track2: #ffc29a;
+  --scope: #ff4d4d; --sun: #ffd400; --moon: #c8c8c8; --eq: #b05cff; --eq2: #4a3260;
+  --horizon: #3fae5a; --grid: #26303b; --warn: #ff4d4d; --ok: #3fae5a;
+  --blind: rgba(255, 77, 77, 0.24);
+}
+body.red {
+  --bg: #0a0000; --panel: #140000; --panel2: #1e0303; --line: #3a0a0a;
+  --text: #ff5a4a; --muted: #a0352c; --accent: #ff6a55;
+  --plane: #ff6a55; --sat: #a0352c; --track: #ffb0a0; --track2: #ff8a7a;
+  --scope: #ffb3a7; --sun: #ffb000; --moon: #a0352c; --eq: #c0392b; --eq2: #3a0a0a;
+  --horizon: #c0392b; --grid: #2a0606; --warn: #ffffff; --ok: #ff6a55;
+  --blind: rgba(255, 180, 160, 0.16);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+       display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+header { display: flex; align-items: center; gap: 14px; padding: 8px 14px; background: var(--panel);
+         border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0 6px 0 0; letter-spacing: .5px; }
+.tabs { display: flex; gap: 4px; }
+.tabs button, .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+                     border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; }
+.tabs button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+.btn:hover, .tabs button:hover { border-color: var(--accent); }
+.btn.danger { border-color: var(--warn); color: var(--warn); }
+.pill { font-variant-numeric: tabular-nums; color: var(--muted); }
+.pill b { color: var(--text); font-weight: 600; }
+.spacer { flex: 1; }
+#banner { display: none; background: var(--warn); color: #000; font-weight: 700; text-align: center; padding: 8px; }
+#banner.show { display: block; }
+#ort-wrap { position: relative; height: 240px; margin-top: 8px; }
+#ort-wrap #ort-map { position: absolute; inset: 0; border-radius: 6px; }
+#ort-wrap.full { position: fixed; inset: 0; height: auto; margin: 0; z-index: 3000; background: var(--bg); }
+#ort-wrap.full #ort-map { border-radius: 0; bottom: 44px; }
+#ort-bar { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; padding: 6px 10px; gap: 10px;
+           align-items: center; background: var(--panel, #1b1f27); font-size: 14px; }
+#ort-wrap.full #ort-bar { display: flex; }
+#ort-fs { position: absolute; top: 10px; right: 54px; z-index: 1000; padding: 2px 8px; }
+#limbanner { display: none; background: #d01010; color: #fff; font-weight: 700; text-align: center; padding: 8px; }
+#limbanner.show { display: block; }
+main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+#view { position: relative; min-height: 0; }
+#sky, #map { position: absolute; inset: 0; width: 100%; height: 100%; }
+#map { display: none; background: var(--bg); }
+#map.leaflet-container { background: var(--bg); }
+/* Night view for the main map; the map for picking locations stays unaltered (satellite imagery) */
+body.dark-tiles #map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.9); }
+body.red .leaflet-tile-pane { filter: grayscale(1) invert(1) brightness(.35) sepia(1) saturate(6) hue-rotate(-50deg); }
+#maperr { display: none; position: absolute; top: 40%; left: 0; right: 0; text-align: center; color: var(--muted); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 10px; display: flex;
+        flex-direction: column; gap: 10px; }
+.card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px;
+           cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+.card h2::before { content: '▾'; font-size: 11px; width: 10px; }
+.card h2:hover { color: var(--text); }
+.card.collapsed h2 { margin-bottom: 0; }
+.card.collapsed h2::before { content: '▸'; }
+.card.collapsed > :not(h2) { display: none !important; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.big { font-size: 18px; font-weight: 700; }
+.warn { color: var(--warn); font-weight: 600; }
+.pad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 34px); gap: 4px; justify-content: center; }
+.pad .btn { padding: 0; touch-action: none; user-select: none; }
+.pad .btn.active { background: var(--accent); color: var(--bg); }
+#jogspeed .btn { padding: 3px 0; font-size: 12px; }
+#jogspeed .btn.sel { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+select.btn, input.btn { cursor: auto; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: right; color: var(--muted); font-weight: 500; font-size: 12px; padding: 3px 4px; position: sticky; top: 0; background: var(--panel2); }
+th:first-child, td:first-child { text-align: left; }
+td { text-align: right; padding: 3px 4px; border-top: 1px solid var(--line); }
+tr.p { cursor: pointer; }
+tr.p:hover td { background: var(--panel); }
+tr.p.sel td { color: var(--track); font-weight: 600; }
+tr.p.low td { color: var(--muted); }
+.list { max-height: 34vh; overflow-y: auto; }
+#msgs div { font-size: 12px; color: var(--muted); }
+#msgs div.new { color: var(--warn); }
+.hint { font-size: 12px; color: var(--muted); }
+a.ext { color: var(--accent); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; font-size: 13px; }
+a.ext:hover { border-color: var(--accent); }
+label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+.plane-icon svg { overflow: visible; }
+.leaflet-tooltip.lbl { background: transparent; border: 0; box-shadow: none; color: var(--text); font: 600 11px system-ui;
+                       text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); padding: 0; }
+.leaflet-tooltip.lbl::before { display: none; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } aside { border-left: 0; } }
+</style>
+</head>
+<body class="dark-tiles">
+<header>
+  <h1>NexPlane</h1>
+  <div class="tabs">
+    <button id="tab-sky" class="active">Himmel</button>
+    <button id="tab-map">Karte</button>
+  </div>
+  <span class="pill">Teleskop <b id="h-scope">–</b></span>
+  <span class="pill">Ziel <b id="h-target">keins</b></span>
+  <span class="pill" id="h-side" title="Seite A: wie bei der Ausrichtung. Seite B: nach einem Meridian-Flip."></span>
+  <span class="pill" id="h-conn">verbinde …</span>
+  <span class="pill warn" id="h-locwarn" style="display:none" title="Der gewählte Standort weicht deutlich von der GPS-Position ab"></span>
+  <span class="spacer"></span>
+  <label class="chk"><input type="checkbox" id="opt-mirror"> Himmel wie Landkarte (Ost rechts)</label>
+  <label class="chk"><input type="checkbox" id="opt-red"> Rotlicht</label>
+  <select id="opt-lang" class="btn" title="Sprache / Language" style="padding:2px 4px"><option value="de">DE</option><option value="en">EN</option></select>
+</header>
+<div id="limbanner">SICHERER BEREICH ABGESCHALTET – EIGENE GEFAHR, HAND AM NETZSCHALTER. Verfolgung gesperrt.</div>
+<div id="banner">VERBINDUNG ZUR MONTIERUNG GESTÖRT – KOLLISION VERHINDERN, NOTFALLS STROM TRENNEN</div>
+<main>
+  <div id="view">
+    <canvas id="sky"></canvas>
+    <div id="map"></div>
+    <div id="maperr">Karte nicht verfügbar (Kartenbibliothek konnte nicht geladen werden).<br>Die Himmelskarte funktioniert weiterhin.</div>
+  </div>
+  <aside>
+    <div class="card" id="loc-card" data-collapsed-default="1">
+      <h2>Standort</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Aktiv</span><span id="loc-current">–</span>
+        <span>Koordinaten</span><span id="loc-coords">–</span>
+        <span>GPS</span><span id="loc-gps">–</span>
+      </div>
+      <select id="loc-sel" class="btn" style="width:100%"></select>
+      <button class="btn" id="btn-loc" style="width:100%;margin-top:6px">Standort wechseln</button>
+      <div class="hint" style="margin-top:6px">Die Montierung wird gestoppt und NexPlane startet mit dem neuen Standort neu. Die Ausrichtung hängt vom Standort ab und muss danach neu gemacht werden.</div>
+      <details id="ort-edit" style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">Standorte &amp; Landmarken anlegen</summary>
+        <div id="ort-wrap">
+          <div id="ort-map"></div>
+          <button class="btn" id="ort-fs" title="Vollbild">⛶</button>
+          <div id="ort-bar"><span id="ort-barpos" style="flex:1">–</span><button class="btn" id="ort-fs-done">Übernehmen &amp; zurück</button></div>
+        </div>
+        <div class="hint" id="ort-maphint" style="margin:4px 0 8px">In die Karte klicken oder den Marker ziehen. Ohne Internet bleibt die Karte leer – Koordinaten dann eintippen oder GPS nehmen.</div>
+        <div class="kv" style="grid-template-columns:auto 1fr;gap:4px 8px;align-items:center">
+          <span>Name</span><input id="ort-name" class="btn" maxlength="40" placeholder="z. B. Brocken Parkplatz">
+          <span>Art</span><select id="ort-typ" class="btn"><option value="standort">Standort (hier steht das Teleskop)</option><option value="landmarke">Landmarke (zum Ausrichten)</option></select>
+          <span>Breite</span><input id="ort-lat" class="btn" inputmode="decimal" placeholder="51.12345 (Grad)">
+          <span>Länge</span><input id="ort-lon" class="btn" inputmode="decimal" placeholder="7.12345 (Grad)">
+          <span>Höhe (m)</span><input id="ort-alt" class="btn" inputmode="decimal" placeholder="über NN">
+        </div>
+        <div class="hint" id="ort-elev" style="margin-top:4px"></div>
+        <div class="hint" style="margin-top:4px">Höhe über Meeresspiegel. Bei Landmarken die Höhe des angepeilten Punkts, z. B. der Kirchturmspitze, nicht des Bodens.</div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn" id="ort-gps">GPS-Position übernehmen</button>
+          <button class="btn" id="ort-save">Speichern</button>
+          <button class="btn" id="ort-save-act" title="Als Standort speichern und NexPlane damit neu starten">Speichern &amp; als Standort nutzen</button>
+        </div>
+        <div id="ort-list" style="margin-top:8px;font-size:12px"></div>
+      </details>
+    </div>
+    <div class="card" id="limits-card">
+      <h2>Sicherer Bereich</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Profil</span><span id="lim-active">–</span>
+        <span>Blinde Bereiche</span><span id="lim-reach">–</span>
+        <span>Stellung zu Home</span><span id="lim-axes">–</span>
+      </div>
+      <div class="row" id="prof-row" style="margin-bottom:8px">
+        <select id="prof-sel" class="btn" style="flex:1;min-width:0"></select>
+        <button class="btn" id="btn-prof">Aktivieren</button>
+      </div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="opt-blind" checked> Blinde Bereiche anzeigen</label>
+      <div class="row" style="margin-bottom:6px">
+        <span class="hint">Flughöhe für die Landkarte</span>
+        <select id="opt-blind-alt" class="btn">
+          <option value="3000">3.000 m</option><option value="6000">6.000 m</option>
+          <option value="9000">9.000 m</option><option value="11000" selected>11.000 m</option>
+          <option value="13000">13.000 m</option>
+        </select>
+      </div>
+      <div class="hint">Rot getönt: Richtungen, die die Montierung mit dem aktiven Profil auf keiner Seite des Pols erreicht. Auf der Landkarte gilt das für Flugzeuge in der gewählten Höhe.</div>
+      <details id="refine-box" style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">Grenzen verfeinern</summary>
+        <div class="hint" style="margin:6px 0">Das Fadenkreuz auf der Landkarte (für die oben gewählte Flughöhe) und am Himmel zeigt, wohin das Teleskop gerade zeigt. Sicheren Bereich abschalten, mit dem Fadenkreuz unter Aufsicht in eine rote Fläche fahren, bis kurz vor die Kollision, dann „Punkt übernehmen“ (Gamepad: Share). Mit dem Gamepad-Stick bewegt sich das Fadenkreuz auf der Karte direkt: hoch = Norden, rechts = Osten (nur nach dem Ausrichten). Mehrere Punkte entlang der echten Grenze machen die rote Fläche kleiner; der Sicherheitsabstand bleibt.</div>
+        <div id="refine-status" style="margin-top:6px;font-size:13px"></div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn" id="refine-add" style="font-weight:600">Punkt übernehmen</button>
+          <button class="btn" id="refine-undo">Rückgängig</button>
+          <button class="btn" id="refine-save">Speichern</button>
+          <button class="btn" id="refine-discard">Verwerfen</button>
+        </div>
+      </details>
+    </div>
+    <div class="card" id="manual-card" style="display:none">
+      <h2>Steuerung &amp; Ausrichtung</h2>
+      <div id="align-status" style="margin-bottom:8px"></div>
+      <button class="btn danger" id="btn-allstop" style="width:100%;font-weight:700;margin-bottom:10px">STOPP (Esc)</button>
+      <button class="btn" id="btn-limoff" style="width:100%;margin-bottom:10px;display:none">Sicheren Bereich abschalten (eigene Gefahr)</button>
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div class="pad" id="jogpad">
+          <span></span><button class="btn" data-jog="0,1" title="Dec +">▲</button><span></span>
+          <button class="btn" data-jog="-1,0" title="RA −">◀</button><span class="hint" style="align-self:center;text-align:center">halten</span><button class="btn" data-jog="1,0" title="RA +">▶</button>
+          <span></span><button class="btn" data-jog="0,-1" title="Dec −">▼</button><span></span>
+        </div>
+        <div style="font-size:13px">
+          <div class="hint" style="margin-bottom:4px">Tempo (°/s)</div>
+          <div id="jogspeed" style="display:grid;grid-template-columns:repeat(3,44px);gap:4px"></div>
+        </div>
+      </div>
+      <div class="hint" style="margin:6px 0 10px">◀ ▶ RA-Achse, ▲ ▼ Dec-Achse. Auch mit den Pfeiltasten (gedrückt halten).</div>
+      <button class="btn" id="btn-home" style="width:100%">Zur Home-Stellung fahren</button>
+      <div class="hint" id="home-hint" style="margin:4px 0 10px"></div>
+      <div class="hint" style="margin-bottom:4px">Ausrichten: Teleskop genau auf das Objekt fahren, dann</div>
+      <div class="row">
+        <select id="align-sel" class="btn" style="flex:1;min-width:0"></select>
+        <input id="align-sky" class="btn" placeholder="z. B. vega, jupiter" style="flex:1;min-width:0;display:none">
+      </div>
+      <button class="btn" id="btn-align" style="width:100%;margin-top:6px">Teleskop zeigt jetzt darauf – ausrichten</button>
+      <div class="hint" style="margin:10px 0 4px">Oder auf ein Flugzeug: in Liste/Karte anklicken (Peilziel), Teleskop mittig darauf fahren, dann</div>
+      <button class="btn" id="btn-align-plane" style="width:100%" title="Wie Gamepad ✕ und „Übernehmen (Ausrichtpunkt)“ in der Karte Korrektur">Flugzeug ist mittig – als Ausrichtpunkt übernehmen</button>
+      <button class="btn" id="btn-forget" style="width:100%;margin-top:6px" title="Ausrichtpunkte, Modell und Korrektur verwerfen, z. B. nach Tests im Wohnzimmer">Ausrichtung vergessen</button>
+      <details id="testalign-box" style="margin-top:12px">
+        <summary class="hint" style="cursor:pointer">Grobausrichtung für Tests zuhause (Testmodus)</summary>
+        <div class="hint" style="margin:6px 0">Nur zum Testen ohne Sicht auf Landmarke oder Himmel, z. B. zum Verfeinern der Grenzen im Wohnzimmer. Voraussetzung: Montierung steht grob nach Norden, Polhöhe eingestellt, eingelernte Home-Stellung (Gegengewicht unten, Tubus zum Pol). Genauigkeit nur einige Grad. Wird nicht gespeichert und überschreibt keine Ausrichtungsdateien. Prüfen: aus der Home-Stellung nur die Dec-Achse fahren, der Tubus schwenkt vom Pol nach Westen oder Osten. Die Anzeige muss dieselbe Seite zeigen (Westen: Az zwischen 180° und 360°, Osten: Az zwischen 0° und 180°), sonst „Um 180° drehen“.</div>
+        <button class="btn" id="btn-test-set" style="width:100%">Testausrichtung setzen</button>
+        <div class="row" style="margin-top:6px">
+          <button class="btn" id="btn-test-flip" style="flex:1">Um 180° drehen</button>
+          <button class="btn" id="btn-test-end" style="flex:1">Testmodus beenden</button>
+        </div>
+      </details>
+    </div>
+    <div class="card" id="target-card">
+      <h2>Verfolgung</h2>
+      <div id="target-none" class="hint">Kein Ziel. Flugzeug in der Karte, am Himmel oder in der Liste anklicken.</div>
+      <div id="fixed-info" style="display:none">
+        <div class="big">Seitenwechsel-Test</div>
+        <div class="kv" style="margin:6px 0 8px">
+          <span>Fester Punkt</span><span id="f-pos"></span>
+          <span>Zielseite</span><span id="f-side"></span>
+          <span>Abstand Teleskop</span><span id="f-off"></span>
+        </div>
+        <div class="hint" style="margin-bottom:8px">Nach dem Wechsel muss das Teleskop wieder auf denselben Punkt zeigen wie vorher.</div>
+        <button class="btn danger" id="btn-stop2" style="width:100%">Test beenden (Esc)</button>
+      </div>
+      <div id="target-info" style="display:none">
+        <div class="big" id="t-name"></div>
+        <div class="kv" style="margin:6px 0 8px">
+          <span>Höhe</span><span id="t-alt"></span>
+          <span>Entfernung</span><span id="t-range"></span>
+          <span>Elevation / Azimut</span><span id="t-elaz"></span>
+          <span>Bewegung am Himmel</span><span id="t-rate"></span>
+          <span>Geschwindigkeit</span><span id="t-speed"></span>
+          <span>Datenalter</span><span id="t-age"></span>
+          <span>Abstand Teleskop</span><span id="t-off"></span>
+        </div>
+        <div class="row" id="t-links" style="margin-bottom:8px"></div>
+        <button class="btn danger" id="btn-stop" style="width:100%">Verfolgung stoppen (Esc)</button>
+      </div>
+    </div>
+    <div class="card" id="flip-card" style="display:none">
+      <h2>Meridian-Flip</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Teleskop auf</span><span id="fl-side">–</span>
+        <span>Automatik</span><span id="fl-auto">–</span>
+      </div>
+      <button class="btn" id="btn-flip" style="width:100%">Seitenwechsel testen</button>
+      <div class="hint" style="margin-top:6px">Hält die aktuelle Blickrichtung fest und fährt sie auf der anderen Seite des Pols an. Teleskop vorher auf eine gut erkennbare Stelle richten.</div>
+    </div>
+    <div class="card">
+      <h2>Korrektur</h2>
+      <div class="row" style="justify-content:space-between">
+        <div class="pad">
+          <span></span><button class="btn" data-off="0,1">▲</button><span></span>
+          <button class="btn" data-off="-1,0">◀</button><button class="btn" id="btn-reset" title="Korrektur zurücksetzen (q)">0</button><button class="btn" data-off="1,0">▶</button>
+          <span></span><button class="btn" data-off="0,-1">▼</button><span></span>
+        </div>
+        <div class="kv" style="font-size:13px">
+          <span>Schritt</span><span><label class="chk"><input type="checkbox" id="opt-big"> groß (0,5°)</label></span>
+          <span id="o-l1">Azimut</span><span id="o-az">0,00°</span>
+          <span id="o-l2">Elevation</span><span id="o-el">0,00°</span>
+        </div>
+      </div>
+      <div class="row" id="corr-btns" style="margin-top:8px;display:none;gap:6px">
+        <button class="btn" id="btn-corr-save" style="flex:1" title="Flugzeug ist mittig: als Ausrichtpunkt übernehmen (Gamepad ✕)">Übernehmen (Ausrichtpunkt)</button>
+        <button class="btn" id="btn-model-pop" title="Letzten Ausrichtpunkt löschen (Gamepad □)">Letzten löschen</button>
+      </div>
+      <div class="row" id="focal-row" style="margin-top:8px;display:none;gap:6px;align-items:center">
+        <span class="hint">Brennweite beim Übernehmen</span>
+        <select id="focal-sel" class="btn"></select>
+      </div>
+      <div id="model-status" style="margin-top:6px;font-size:13px"></div>
+      <div id="model-points" style="margin-top:4px;font-size:12px"></div>
+      <div class="hint" style="margin-top:6px" id="corr-hint">Tasten: W/A/S/D je 0,1°, mit Umschalt 0,5°, Q zurücksetzen</div>
+      <div style="margin-top:6px;font-size:13px" id="pad-status"></div>
+    </div>
+    <div class="card">
+      <h2>Flugzeuge <span id="n-planes"></span></h2>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="opt-above" checked> nur über 5° Elevation</label>
+      <div class="list">
+        <table>
+          <thead><tr><th>Kennung</th><th>Elev.</th><th>Entf.</th><th>Höhe</th><th>°/s</th></tr></thead>
+          <tbody id="plist"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Meldungen</h2>
+      <div id="msgs"><div>Keine Meldungen.</div></div>
+    </div>
+    <div class="card" data-collapsed-default="1">
+      <h2>Regler</h2>
+      <div class="kv" style="align-items:center">
+        <span>kp</span><span class="row"><button class="btn" data-gain="kp,-0.01">−</button><b id="g-kp"></b><button class="btn" data-gain="kp,0.01">+</button></span>
+        <span>ki</span><span class="row"><button class="btn" data-gain="ki,-0.01">−</button><b id="g-ki"></b><button class="btn" data-gain="ki,0.01">+</button></span>
+        <span>kd</span><span class="row"><button class="btn" data-gain="kd,-0.01">−</button><b id="g-kd"></b><button class="btn" data-gain="kd,0.01">+</button></span>
+      </div>
+      <div class="hint" style="margin-top:6px">Tasten wie bisher: R/F, T/G, Y/U</div>
+    </div>
+    <button class="btn danger" id="btn-quit">NexPlane beenden</button>
+  </aside>
+</main>
+<script src="/static/i18n_en.js"></script>
+<script>
+'use strict';
+const TOKEN = '__NEXPLANE_TOKEN__';
+// ---- Language (DE/EN) ----
+let LANG = (() => { try { return localStorage.getItem('nexplane-lang') || 'de'; } catch (e) { return 'de'; } })();
+if (!window.NEXPLANE_EN) LANG = 'de';
+const LOCALE = () => LANG === 'en' ? 'en-GB' : 'de-DE';
+const TR_CACHE = new Map();
+function tr(s) {
+  if (LANG === 'de' || s == null || s === '') return s;
+  const hit = TR_CACHE.get(s);
+  if (hit !== undefined) return hit;
+  const r = trUncached(s);
+  if (TR_CACHE.size > 3000) TR_CACHE.clear();
+  TR_CACHE.set(s, r);
+  return r;
+}
+function trUncached(s) {
+  const D = window.NEXPLANE_EN, k = String(s).trim();
+  if (!k) return s;
+  const lead = String(s).match(/^\s*/)[0], trail = String(s).match(/\s*$/)[0];
+  if (Object.prototype.hasOwnProperty.call(D.exact, k)) return lead + D.exact[k] + trail;
+  let out = k;
+  for (const [re, rep] of D.phrases) out = out.replace(re, rep);
+  // Look up whole sentences remaining after the replacements once more by exact match
+  out = out.split(/(?<=[.!?])\s+/).map(x => Object.prototype.hasOwnProperty.call(D.exact, x) ? D.exact[x] : x).join(' ');
+  return lead + out + trail;
+}
+const I18N_ORIG = new WeakMap(), I18N_LAST = new WeakMap(), I18N_ATTR = new WeakMap();
+function translateTree(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const par = n.parentNode && n.parentNode.nodeName;
+    if (par === 'SCRIPT' || par === 'STYLE') continue;
+    let orig = I18N_ORIG.get(n);
+    if (orig === undefined || n.data !== I18N_LAST.get(n)) { orig = n.data; I18N_ORIG.set(n, orig); }
+    const want = tr(orig);
+    if (n.data !== want) n.data = want;
+    I18N_LAST.set(n, want);
+  }
+  const els = root.querySelectorAll ? root.querySelectorAll('[title],[placeholder]') : [];
+  for (const el of els) {
+    let a = I18N_ATTR.get(el);
+    if (!a) { a = {}; I18N_ATTR.set(el, a); }
+    for (const name of ['title', 'placeholder']) {
+      if (!el.hasAttribute(name)) continue;
+      const cur = el.getAttribute(name);
+      if (a[name] === undefined || cur !== a[name + '_last']) a[name] = cur;
+      const want = tr(a[name]);
+      if (cur !== want) el.setAttribute(name, want);
+      a[name + '_last'] = want;
+    }
+  }
+}
+let i18nPending = false;
+const i18nObserver = new MutationObserver(() => {
+  if (i18nPending || LANG === 'de') return;
+  i18nPending = true;
+  requestAnimationFrame(() => { i18nPending = false; translateTree(document.body); });
+});
+function setLang(l) {
+  LANG = l; TR_CACHE.clear(); try { localStorage.setItem('nexplane-lang', l); } catch (e) {}
+  document.documentElement.lang = l;
+  translateTree(document.body);
+}
+{ const _confirm = window.confirm.bind(window); window.confirm = m => _confirm(tr(m)); }
+const RAD = Math.PI / 180;
+let S = null;                 // last state from the server
+let view = 'sky';
+const trails = new Map();     // hex -> [{az, el, t}]
+let lastTrailT = 0;
+let hoverHex = null;
+let lastMsgCount = 0;
+
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => v == null || isNaN(v) ? '–' : v.toLocaleString(LOCALE(), {minimumFractionDigits: d, maximumFractionDigits: d});
+const css = name => getComputedStyle(document.body).getPropertyValue(name).trim();
+const hexLabel = h => h.replace(/^0x/i, '').slice(-6).toUpperCase();
+const label = p => p.callsign || hexLabel(p.hex);
+
+async function api(name, data = {}) {
+  try {
+    const r = await fetch('/api/' + name, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-NexPlane-Token': TOKEN},
+                                           body: JSON.stringify(data)});
+    const j = await r.json();
+    if (!j.ok) addLocalMsg(j.error || 'Fehler');
+    return j;
+  } catch (e) { addLocalMsg('Befehl nicht angekommen: ' + e); }
+}
+const localMsgs = [];
+function addLocalMsg(t) { localMsgs.push({t: Date.now() / 1000, text: t}); }
+
+let REACH = null, reachVersion = -1, reachFetching = false;
+async function fetchReach(version) {
+  reachFetching = true;
+  try {
+    const r = await fetch('/api/reach', {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    if (r.ok) { const j = await r.json(); REACH = j.grid; reachVersion = version; }
+  } catch (e) { /* retry on the next poll */ }
+  reachFetching = false;
+}
+function blindEnabled() { return $('opt-blind').checked && REACH && S && S.profiles && S.profiles.active; }
+
+async function poll() {
+  try {
+    const r = await fetch('/api/state', {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    if (r.status === 403) { location.reload(); return; }   // NexPlane was restarted
+    if (!r.ok) throw new Error(r.status);
+    S = await r.json();
+    $('h-conn').innerHTML = '<b style="color:var(--ok)">verbunden</b>';
+    if (S.reach && S.reach.version !== reachVersion && !reachFetching) fetchReach(S.reach.version);
+    updateTrails(); updatePanel(); if (view === 'map') updateMap();
+  } catch (e) {
+    $('h-conn').innerHTML = '<b style="color:var(--warn)">keine Verbindung zu NexPlane</b>';
+  }
+  setTimeout(poll, 250);
+}
+
+function updateTrails() {
+  const now = Date.now() / 1000;
+  if (now - lastTrailT < 1) return;
+  lastTrailT = now;
+  const seen = new Set();
+  for (const p of S.planes) {
+    seen.add(p.hex);
+    if (!trails.has(p.hex)) trails.set(p.hex, []);
+    const tr = trails.get(p.hex);
+    tr.push({az: p.az, el: p.el, lat: p.lat, lon: p.lon, t: now});
+    while (tr.length && now - tr[0].t > 60) tr.shift();
+  }
+  for (const k of [...trails.keys()]) if (!seen.has(k)) trails.delete(k);
+}
+
+// ---------------------------------------------------------------- Sidebar
+function angDist(a, b) {
+  const c = Math.sin(a.el * RAD) * Math.sin(b.el * RAD) + Math.cos(a.el * RAD) * Math.cos(b.el * RAD) * Math.cos((a.az - b.az) * RAD);
+  return Math.acos(Math.max(-1, Math.min(1, c))) / RAD;
+}
+
+function updatePanel() {
+  updateRefinePanel();
+  $('banner').classList.toggle('show', !!S.comm_failure);
+  $('limbanner').classList.toggle('show', !!S.limits_off);
+  $('btn-limoff').style.display = (S.profiles && S.profiles.active) ? '' : 'none';
+  $('btn-limoff').textContent = S.limits_off ? 'Sicheren Bereich wieder einschalten' : 'Sicheren Bereich abschalten (eigene Gefahr)';
+  $('btn-limoff').classList.toggle('danger', !!S.limits_off);
+  $('h-scope').textContent = S.telescope ? `Az ${fmt(S.telescope.az)}°  El ${fmt(S.telescope.el)}°` : '–';
+  const t = S.planes.find(p => p.hex === S.tracked);
+  const fx = S.fixed_target;
+  $('h-target').textContent = t ? label(t) : fx ? 'fester Punkt' : 'keins';
+  $('target-none').style.display = t || fx ? 'none' : '';
+  $('fixed-info').style.display = fx ? '' : 'none';
+  if (fx) {
+    $('f-pos').textContent = `Az ${fmt(fx.az)}°  El ${fmt(fx.el)}°`;
+    $('f-side').textContent = fx.side ? 'Seite ' + fx.side : 'wird bestimmt …';
+    $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
+  }
+  const L = S.location || {current: '', presets: []};
+  const cur = L.presets.find(p => p.name === L.current);
+  $('loc-current').textContent = L.current || '–';
+  $('loc-coords').textContent = cur ? `${fmt(cur.lat, 4)}°, ${fmt(cur.lon, 4)}°, ${fmt(cur.alt, 0)} m` : '–';
+  const lkey = L.current + '|' + L.presets.map(p => p.name + p.typ + p.lat + p.lon + p.alt).join('|');
+  if ($('loc-sel').dataset.key !== lkey) {
+    $('loc-sel').dataset.key = lkey;
+    $('loc-sel').innerHTML = L.presets.filter(p => p.typ !== 'landmarke').map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' (aktiv)' : ''}</option>`).join('');
+    renderOrtList(L);
+  }
+  const G = S.gps, fixp = G && G.fix;
+  let gpsTxt = G ? esc(G.status) : 'aus';
+  let warn = '';
+  if (fixp) {
+    gpsTxt = `${fmt(fixp.lat, 5)}°, ${fmt(fixp.lon, 5)}°, ${fmt(fixp.alt, 0)} m` + (fixp.sats ? ` · ${fixp.sats} Sat.` : '') + ` · vor ${fmt(fixp.age_s, 0)} s`;
+    if (cur) {
+      const d = distM(cur.lat, cur.lon, fixp.lat, fixp.lon);
+      gpsTxt += ` · ${d < 1000 ? fmt(d, 0) + ' m' : fmt(d / 1000, 1) + ' km'} vom Standort`;
+      if (d > 300 && fixp.age_s < 600) warn = `Standort ${d < 1000 ? fmt(d, 0) + ' m' : fmt(d / 1000, 1) + ' km'} neben GPS`;
+    }
+  }
+  $('loc-gps').innerHTML = gpsTxt;
+  $('h-locwarn').style.display = warn ? '' : 'none';
+  $('h-locwarn').textContent = warn ? '⚠ ' + warn : '';
+  const P = S.profiles || {list: [], active: ''};
+  const R = S.reach || {};
+  $('lim-active').textContent = P.active || 'kein sicherer Bereich konfiguriert';
+  $('prof-row').style.display = P.list.length > 1 ? '' : 'none';
+  const pkey = P.active + '|' + P.list.join('|');
+  if ($('prof-sel').dataset.key !== pkey) {
+    $('prof-sel').dataset.key = pkey;
+    $('prof-sel').innerHTML = P.list.map(n => `<option value="${esc(n)}" ${n === P.active ? 'selected' : ''}>${esc(n)}${n === P.active ? ' (aktiv)' : ''}</option>`).join('');
+  }
+  $('lim-axes').textContent = S.axis_rel ? `${tr('Achse 1')} ${S.axis_rel[0] >= 0 ? '+' : ''}${fmt(S.axis_rel[0], 2)}° · ${tr('Achse 2')} ${S.axis_rel[1] >= 0 ? '+' : ''}${fmt(S.axis_rel[1], 2)}°` : '–';
+  $('lim-reach').textContent = !P.active ? '–' : R.status ? R.status
+    : R.available ? 'berechnet' : (S.manual && S.manual.aligned ? 'wird berechnet …' : 'nach dem Ausrichten');
+  const M = S.manual || {};
+  $('manual-card').style.display = M.available ? '' : 'none';
+  if (M.available) {
+    $('btn-align-plane').disabled = !S.tracked || !S.axis_correction;
+    $('btn-test-flip').disabled = $('btn-test-end').disabled = !M.test_aligned;
+    $('align-status').innerHTML = M.test_aligned ? `<span class="warn">${esc(M.aligned_text)}</span>` +
+        ' <span class="hint">– nur grob, nur zuhause. Echte Ausrichtung (Landmarke, Himmelsobjekt oder Flugzeug + ✕) beendet den Testmodus.</span>'
+      : M.aligned ? `Ausgerichtet: <b>${esc(M.aligned_text)}</b>` +
+        (M.aligned_text.startsWith('grob') ? ' <span class="hint">– erstes Flugzeug verfolgen, mittig korrigieren, ✕</span>' : '')
+      : '<span class="warn">Nicht ausgerichtet.</span> <span class="hint">Mit Landmarke: Teleskop darauf fahren und unten ausrichten. ' +
+        'Ohne Landmarke: Flugzeug in der Liste anklicken (oder Gamepad R1) – es wird Peilziel, NexPlane fährt noch nicht selbst. ' +
+        'Teleskop von Hand mittig darauf fahren, dann ✕ bzw. „Übernehmen“.</span>' +
+        (S.tracked ? `<br>Peilziel: <b>${esc((S.planes.find(p => p.hex === S.tracked) || {}).callsign || S.tracked)}</b>` : '');
+    $('btn-home').textContent = M.home_active ? 'Fährt zur Home-Stellung … (Esc stoppt)' : 'Zur Home-Stellung fahren';
+    $('home-hint').textContent = 'Ziel: ' + M.home_source;
+    const sel = $('align-sel');
+    const key = M.align_targets.join('|');
+    if (sel.dataset.key !== key) {
+      sel.dataset.key = key;
+      sel.innerHTML = '<option value="__sky__">Himmelsobjekt …</option>' +
+        M.align_targets.map(n => `<option value="${esc(n)}">Landmarke: ${esc(n)}</option>`).join('');
+      $('align-sky').style.display = sel.value === '__sky__' ? '' : 'none';
+    }
+  }
+  const eq = S.mount_mode === 'eq' && S.scope_side;
+  $('flip-card').style.display = eq ? '' : 'none';
+  $('h-side').innerHTML = eq ? `Seite <b>${S.scope_side}</b>` : '';
+  if (eq) {
+    const moving = S.target_side && S.target_side !== S.scope_side;
+    $('fl-side').innerHTML = `Seite ${S.scope_side}` + (moving ? ` <span class="warn">→ wechselt auf ${S.target_side}</span>` : '');
+    $('fl-auto').textContent = S.auto_flip ? 'an' : 'aus (kein sicherer Bereich oder abgeschaltet)';
+  }
+  $('target-info').style.display = t ? '' : 'none';
+  if (t) {
+    $('t-name').textContent = `${label(t)}  (${hexLabel(t.hex)})`;
+    $('t-alt').textContent = t.in_space ? 'im All' : `${fmt(t.alt_m, 0)} m`;
+    $('t-range').textContent = `${fmt(t.range_m / 1000)} km`;
+    $('t-elaz').textContent = `${fmt(t.el)}° / ${fmt(t.az)}°`;
+    $('t-rate').innerHTML = t.ang_rate_dps > 3.5 ? `<span class="warn">${fmt(t.ang_rate_dps, 2)} °/s – sehr schnell</span>` : `${fmt(t.ang_rate_dps, 2)} °/s`;
+    $('t-speed').textContent = `${fmt(t.speed_ms * 3.6, 0)} km/h`;
+    $('t-age').innerHTML = t.age_s == null ? '–' : (t.age_s > 5 ? `<span class="warn">${fmt(t.age_s)} s</span>` : `${fmt(t.age_s)} s`);
+    const fn = flightNumber(t.callsign);
+    const linkKey = t.hex + '|' + fn;
+    if ($('t-links').dataset.key !== linkKey) {
+      $('t-links').dataset.key = linkKey;
+      $('t-links').innerHTML = fn ? `<a class="ext" target="_blank" rel="noopener noreferrer" href="https://www.airnavradar.com/data/flights/${encodeURIComponent(fn)}/">AirNav Radar ↗</a>
+        <a class="ext" target="_blank" rel="noopener noreferrer" href="https://www.flightradar24.com/${encodeURIComponent(fn)}">Flightradar24 ↗</a>
+        <a class="ext" target="_blank" rel="noopener noreferrer" href="https://www.flightaware.com/live/flight/${encodeURIComponent((t.callsign || fn).trim())}">FlightAware ↗</a>
+        ${fn !== t.callsign ? `<span class="hint">als ${esc(fn)}</span>` : ''}` : '<span class="hint">Keine Kennung empfangen, daher keine Links.</span>';
+    }
+    const aim = S.tracked_now || t;
+    $('t-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, aim), 2)}°` : '–';
+  }
+  if (S.axis_correction) {
+    const C = S.correction || {};
+    $('o-l1').textContent = 'RA-Achse'; $('o-l2').textContent = 'Dec-Achse';
+    $('o-az').textContent = fmt(C.ra || 0, 2) + '°';
+    $('o-el').textContent = fmt(C.dec || 0, 2) + '°';
+    $('corr-btns').style.display = 'flex';
+    const Mo = C.model || {};
+    if (Mo.points != null) {
+      let t = `Ausrichtpunkte: <b>${Mo.points}</b>`;
+      if (Mo.active) {
+        t += ` · <b>Polfehler-Modell aktiv</b>, Rest ${fmt(Mo.rms, 2)}°`;
+        if (Mo.polar_high != null) t += `<br>Polachse: ${fmt(Math.abs(Mo.polar_high), 1)}° zu ${Mo.polar_high > 0 ? 'hoch' : 'tief'}, ${fmt(Math.abs(Mo.polar_east), 1)}° zu weit ${Mo.polar_east > 0 ? 'östlich' : 'westlich'}`;
+        if (Mo.cone != null && Math.abs(Mo.cone) >= 0.05) t += ` · Kegelfehler ${fmt(Mo.cone, 2)}°`;
+      } else if (Mo.points > 0) {
+        t += ` · <span class="hint">nur Nullpunkt; ab 3 Punkten in verschiedenen Richtungen wird die Polfehlstellung mitgerechnet</span>`;
+      } else {
+        t += ' <span class="hint">(erst ausrichten)</span>';
+      }
+      $('model-status').innerHTML = t;
+      const L = Mo.list || [];
+      const pkey = JSON.stringify(L.map(p => [p.name, p.focal, p.res == null ? null : Math.round(p.res * 100)]));
+      if ($('model-points').dataset.key !== pkey) {
+        $('model-points').dataset.key = pkey;
+        $('model-points').innerHTML = L.length ? '<table style="width:100%"><tbody>' + L.map((p, i) => {
+          const bad = p.res != null && p.res > 0.5;
+          return `<tr><td>${i + 1}</td><td>${esc(p.name || '–')}</td><td>${p.focal ? Math.round(p.focal) + ' mm' : ''}</td>` +
+                 `<td class="${bad ? 'warn' : ''}" title="Abweichung vom Modell">${p.res == null ? '' : fmt(p.res, 2) + '°'}</td>` +
+                 `<td style="text-align:right">${L.length > 1 ? `<button class="btn" data-delpt="${i}" title="Punkt löschen" style="padding:0 6px">✕</button>` : ''}</td></tr>`;
+        }).join('') + '</tbody></table>' + (L.some(p => p.res != null && p.res > 0.5) ? '<span class="warn">Rot: passt schlecht (&gt; 0,5°) – falsch zentriert?</span>' : '') : '';
+      }
+    }
+    const F = S.focal || {steps: [], mm: 0};
+    $('focal-row').style.display = 'flex';
+    const fkey = F.steps.join('|') + '|' + F.mm;
+    if ($('focal-sel').dataset.key !== fkey) {
+      $('focal-sel').dataset.key = fkey;
+      const steps = F.steps.includes(F.mm) ? F.steps : [...F.steps, F.mm].sort((a, b) => a - b);
+      $('focal-sel').innerHTML = steps.map(s => `<option value="${s}" ${s === F.mm ? 'selected' : ''}>${Math.round(s)} mm</option>`).join('');
+    }
+    $('corr-hint').textContent = 'W/A/S/D und die Knöpfe verschieben im Kamerabild (0,1°, mit Umschalt 0,5°), Q = 0. Die Korrektur bleibt für alle Flugzeuge erhalten. Ist das verfolgte Flugzeug mittig, macht „Übernehmen“ daraus einen Ausrichtpunkt.';
+    const G = S.gamepad;
+    $('pad-status').innerHTML = !G ? '<span class="hint">Gamepad abgeschaltet (config.yaml).</span>'
+      : G.connected ? `🎮 <b>${esc(G.name)}</b> verbunden <span class="hint">– Stick: Korrektur/Fahren, R2 schneller, ✕ Ausrichtpunkt, □ letzten löschen, ○ Korrektur 0, △ STOPP, R1/L1 Flugzeug, Options Brennweite, Share Grenzpunkt</span>`
+      : `<span class="warn">🎮 nicht verbunden</span> <span class="hint">${esc(G.error || '')}</span>`;
+  } else {
+    $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
+    $('o-el').textContent = fmt(S.offsets.el, 2) + '°';
+  }
+  $('g-kp').textContent = fmt(S.gains.kp, 2); $('g-ki').textContent = fmt(S.gains.ki, 2); $('g-kd').textContent = fmt(S.gains.kd, 2);
+
+  const onlyAbove = $('opt-above').checked;
+  const list = S.planes.filter(p => !p.in_space && (!onlyAbove || p.el >= 5)).sort((a, b) => b.el - a.el);
+  $('n-planes').textContent = `(${list.length})`;
+  $('plist').innerHTML = list.map(p => `<tr class="p ${p.hex === S.tracked ? 'sel' : ''} ${p.el < 5 ? 'low' : ''}" data-hex="${p.hex}">
+      <td>${esc(label(p))}</td><td>${fmt(p.el)}°</td><td>${fmt(p.range_m / 1000, 0)} km</td>
+      <td>${fmt(p.alt_m, 0)}</td><td>${fmt(p.ang_rate_dps, 2)}</td></tr>`).join('');
+
+  const msgs = [...S.messages, ...localMsgs].sort((a, b) => b.t - a.t).slice(0, 6);
+  const now = Date.now() / 1000;
+  $('msgs').innerHTML = msgs.length ? msgs.map(m => `<div class="${now - m.t < 10 ? 'new' : ''}">${new Date(m.t * 1000).toLocaleTimeString(LOCALE())} – ${esc(tr(m.text))}</div>`).join('')
+                                    : '<div>Keine Meldungen.</div>';
+}
+// ICAO airline code (3 letters, in the ADS-B callsign) -> IATA code (2 characters, in flight numbers).
+// Only used if the code is followed exclusively by digits; otherwise the
+// callsign is not a flight number and is linked unchanged.
+const ICAO_TO_IATA = {DLH: 'LH', EWG: 'EW', RYR: 'FR', EZY: 'U2', AUA: 'OS', SWR: 'LX',
+  KLM: 'KL', AFR: 'AF', BAW: 'BA', EIN: 'EI', IBE: 'IB', VLG: 'VY', TAP: 'TP', SAS: 'SK', FIN: 'AY', LOT: 'LO',
+  THY: 'TK', PGT: 'PC', UAE: 'EK', QTR: 'QR', ETD: 'EY', UAL: 'UA', DAL: 'DL', AAL: 'AA', ACA: 'AC', CFG: 'DE',
+  BEL: 'SN', WZZ: 'W6', CSA: 'OK', AEE: 'A3', ICE: 'FI', SXS: 'XQ', TUI: 'X3', ITY: 'AZ', NAX: 'DY'};
+function flightNumber(callsign) {
+  const cs = (callsign || '').trim().toUpperCase();
+  const m = cs.match(/^([A-Z]{3})(\d{1,4})$/);
+  if (m && ICAO_TO_IATA[m[1]]) return ICAO_TO_IATA[m[1]] + String(Number(m[2]));
+  return cs;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+
+$('plist').addEventListener('click', e => { const tr = e.target.closest('tr[data-hex]'); if (tr) api('track', {hex: tr.dataset.hex}); });
+// ---- Profile / blind zones ----
+$('btn-prof').onclick = () => {
+  const name = $('prof-sel').value;
+  if (!S || !S.profiles || name === S.profiles.active) { addLocalMsg('Bitte ein anderes Profil wählen.'); return; }
+  if (confirm(`Profil "${name}" aktivieren? Die Montierung wird dafür gestoppt.`)) api('set_profile', {name});
+};
+for (const id of ['opt-blind', 'opt-blind-alt']) {
+  const el = $(id), key = 'nexplane-' + id;
+  try { const v = localStorage.getItem(key); if (v !== null) { if (el.type === 'checkbox') el.checked = v === '1'; else el.value = v; } } catch (e) {}
+  el.addEventListener('change', () => { try { localStorage.setItem(key, el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value); } catch (e) {} });
+}
+
+// ---- Location ----
+$('btn-loc').onclick = () => {
+  const name = $('loc-sel').value;
+  if (!S || !S.location || name === S.location.current) { addLocalMsg('Bitte einen anderen Standort wählen.'); return; }
+  if (confirm(`Standort auf "${name}" wechseln? Die Montierung wird gestoppt, NexPlane startet neu und muss danach neu ausgerichtet werden.`)) {
+    api('set_location', {name}).then(j => { if (j && j.ok) addLocalMsg('Standortwechsel läuft, die Seite lädt gleich neu …'); });
+  }
+};
+
+// ---- Create places (locations / landmarks) ----
+function distM(la1, lo1, la2, lo2) {
+  const p1 = la1 * RAD, p2 = la2 * RAD, dp = p2 - p1, dl = (lo2 - lo1) * RAD;
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+let ortMap = null, ortMarker = null, ortLayer = null;
+function ortFields() {
+  const num = id => parseFloat(String($(id).value).replace(',', '.'));
+  return {name: $('ort-name').value.trim(), typ: $('ort-typ').value, lat: num('ort-lat'), lon: num('ort-lon'), alt: num('ort-alt')};
+}
+let ortAltAuto = true, ortElevSeq = 0;
+async function ortLookupElevation(lat, lon) {
+  const seq = ++ortElevSeq;
+  $('ort-elev').textContent = tr('Geländehöhe wird abgefragt …');
+  try {
+    const r = await fetch(`/api/elevation?lat=${lat}&lon=${lon}`, {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    const j = await r.json();
+    if (seq !== ortElevSeq) return;
+    if (!j.ok) { $('ort-elev').textContent = tr('Geländehöhe nicht verfügbar') + ' (' + (j.error || r.status) + ')'; return; }
+    const g = Math.round(j.alt);
+    const lm = $('ort-typ').value === 'landmarke';
+    $('ort-elev').innerHTML = `${esc(tr('Boden'))}: <b>${g} m</b> ${esc(tr('über NN'))} <span class="hint">(${esc(j.quelle)})</span>` +
+      (lm ? `<br><span class="warn">${esc(tr('Landmarke: Höhe des Gebäudes bzw. der Spitze noch dazurechnen.'))}</span>` : '');
+    if (ortAltAuto) { $('ort-alt').value = g; }
+  } catch (e) {
+    if (seq === ortElevSeq) $('ort-elev').textContent = tr('Geländehöhe nicht verfügbar (kein Internet?)');
+  }
+}
+function ortSetPos(lat, lon, alt) {
+  $('ort-lat').value = lat.toFixed(6); $('ort-lon').value = lon.toFixed(6);
+  $('ort-barpos').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  if (alt != null) $('ort-alt').value = Math.round(alt);
+  if (ortMap) { ortMarker.setLatLng([lat, lon]); if (!ortMarker._map) ortMarker.addTo(ortMap); }
+}
+async function initOrtMap() {
+  if (ortMap) { ortMap.invalidateSize(); return; }
+  try { await loadLeaflet(); } catch (e) { $('ort-maphint').textContent = 'Kartenbibliothek nicht verfügbar – Koordinaten eintippen.'; return; }
+  const c = S ? [S.observer.lat, S.observer.lon] : [51, 10];
+  ortMap = L.map('ort-map', {zoomControl: true}).setView(c, 12);
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap-Mitwirkende'});
+  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                          {maxZoom: 19, attribution: 'Bilder &copy; Esri, Maxar, Earthstar Geographics'});
+  const layers = {}; layers[tr('Karte')] = osm; layers[tr('Satellit')] = sat;
+  const pref = storeGet('nexplane-ort-layer') === 'sat' ? sat : osm;
+  pref.addTo(ortMap);
+  L.control.layers(layers, null, {position: 'topright'}).addTo(ortMap);
+  ortMap.on('baselayerchange', e => storeSet('nexplane-ort-layer', e.layer === sat ? 'sat' : 'osm'));
+  ortLayer = L.layerGroup().addTo(ortMap);
+  ortMarker = L.marker(c, {draggable: true});
+  ortMarker.on('dragend', () => { const p = ortMarker.getLatLng(); ortSetPos(p.lat, p.lng, null); ortLookupElevation(p.lat, p.lng); });
+  ortMap.on('click', e => { ortSetPos(e.latlng.lat, e.latlng.lng, null); ortLookupElevation(e.latlng.lat, e.latlng.lng); });
+  renderOrtList(S && S.location);
+}
+function renderOrtList(Lc) {
+  if (!Lc) return;
+  const rows = Lc.presets.map(p => `<tr><td>${p.typ === 'landmarke' ? '◎' : '⌂'}</td><td>${esc(p.name)}${p.name === Lc.current ? ' <b>(aktiv)</b>' : ''}</td>` +
+    `<td>${fmt(p.lat, 4)}, ${fmt(p.lon, 4)}, ${fmt(p.alt, 0)} m</td><td style="text-align:right;white-space:nowrap">` +
+    (p.own ? `<button class="btn" data-ortedit="${esc(p.name)}" style="padding:0 6px" title="Bearbeiten">✎</button> ` +
+             (p.name !== Lc.current ? `<button class="btn" data-ortdel="${esc(p.name)}" style="padding:0 6px" title="Löschen">✕</button>` : '')
+           : '<span class="hint" title="Steht in config.yaml">config</span>') + '</td></tr>').join('');
+  $('ort-list').innerHTML = '<table style="width:100%"><tbody>' + rows + '</tbody></table><div class="hint">⌂ Standort · ◎ Landmarke</div>';
+  if (ortLayer) {
+    ortLayer.clearLayers();
+    Lc.presets.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 5, color: p.typ === 'landmarke' ? '#e0a020' : '#3a8ee6'})
+      .bindTooltip(p.name).addTo(ortLayer));
+  }
+}
+$('ort-edit').addEventListener('toggle', () => { if ($('ort-edit').open) initOrtMap(); });
+$('ort-alt').addEventListener('input', () => { ortAltAuto = $('ort-alt').value.trim() === ''; });
+function ortFull(on) {
+  $('ort-wrap').classList.toggle('full', on);
+  $('ort-fs').textContent = on ? '✕' : '⛶';
+  $('ort-fs').title = on ? tr('Vollbild beenden') : tr('Vollbild');
+  if (ortMap) setTimeout(() => ortMap.invalidateSize(), 50);
+}
+$('ort-fs').onclick = () => ortFull(!$('ort-wrap').classList.contains('full'));
+$('ort-fs-done').onclick = () => ortFull(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ort-wrap').classList.contains('full')) { ortFull(false); e.stopPropagation(); } }, true);
+$('ort-gps').onclick = () => {
+  const f = S && S.gps && S.gps.fix;
+  if (!f) { addLocalMsg('Keine GPS-Position vorhanden (' + (S && S.gps ? S.gps.status : 'GPS aus') + ').'); return; }
+  ortSetPos(f.lat, f.lon, f.alt); ortAltAuto = false; $('ort-elev').textContent = tr('Höhe aus GPS übernommen.');
+  if (ortMap) ortMap.setView([f.lat, f.lon], 15);
+  if (!$('ort-name').value) $('ort-name').value = 'GPS ' + new Date().toLocaleDateString('de-DE');
+};
+function ortSave(activate) {
+  const f = ortFields();
+  if (!f.name) { addLocalMsg('Bitte einen Namen eingeben.'); return; }
+  if ([f.lat, f.lon].some(isNaN)) { addLocalMsg('Bitte Breite und Länge angeben (Karte anklicken, GPS oder eintippen).'); return; }
+  if (isNaN(f.alt)) { addLocalMsg('Bitte die Höhe in Metern angeben.'); return; }
+  if (activate) {
+    if (f.typ !== 'standort') { addLocalMsg('Nur ein Standort kann aktiviert werden.'); return; }
+    if (!confirm(`„${f.name}“ speichern und als Standort nutzen? NexPlane startet dafür neu; danach neu ausrichten.`)) return;
+  }
+  api('ort_save', {...f, activate});
+}
+$('ort-save').onclick = () => ortSave(false);
+$('ort-save-act').onclick = () => ortSave(true);
+$('ort-list').addEventListener('click', e => {
+  const d = e.target.closest('[data-ortdel]'), ed = e.target.closest('[data-ortedit]');
+  if (d && confirm(`„${d.dataset.ortdel}“ löschen?`)) api('ort_delete', {name: d.dataset.ortdel});
+  if (ed && S) {
+    const p = S.location.presets.find(q => q.name === ed.dataset.ortedit); if (!p) return;
+    $('ort-name').value = p.name; $('ort-typ').value = p.typ; ortSetPos(p.lat, p.lon, p.alt); ortAltAuto = false; $('ort-elev').textContent = '';
+    if (ortMap) ortMap.setView([p.lat, p.lon], 15);
+  }
+});
+
+// ---- Refining the safe area (axis-space view with crosshair) ----
+$('refine-box').addEventListener('toggle', () => api('refine', {action: $('refine-box').open ? 'on' : 'off', alt_m: Number($('opt-blind-alt').value)}));
+$('opt-blind-alt').addEventListener('change', () => { if ($('refine-box').open) api('refine', {action: 'alt', alt_m: Number($('opt-blind-alt').value)}); });
+$('refine-add').onclick = () => api('refine', {action: 'add'});
+$('refine-undo').onclick = () => api('refine', {action: 'undo'});
+$('refine-save').onclick = () => { if (confirm('Verfeinerten sicheren Bereich speichern? Die bisherige Datei bleibt als .bak erhalten.')) api('refine', {action: 'save'}); };
+$('refine-discard').onclick = () => { if (confirm('Alle ungespeicherten Grenzpunkte verwerfen?')) api('refine', {action: 'discard'}); };
+function telescopeInRed() {
+  // Is the current telescope direction in a blind (red) cell of the reachability grid?
+  if (!REACH || !S || !S.telescope || S.telescope.el < 0) return null;
+  const i = Math.floor(((S.telescope.az % 360) + 360) % 360 / REACH.az_step), j = Math.floor(S.telescope.el / REACH.el_step);
+  const row = REACH.rows[Math.min(REACH.rows.length - 1, Math.max(0, j))];
+  return row ? row[Math.min(row.length - 1, i)] === '0' : null;
+}
+function updateRefinePanel() {
+  const R = S && S.refine;
+  if (!R || !R.active || !R.outline) { $('refine-status').textContent = ''; return; }
+  const P = R.preview || {}, red = telescopeInRed();
+  let t = `${esc(tr('Fadenkreuz'))}: ` + (S.telescope ? `Az ${fmt(S.telescope.az, 1)}° El ${fmt(S.telescope.el, 1)}° · ` : '') +
+    (red === true ? `<span class="warn">${esc(tr('in roter Fläche'))}</span>` : red === false ? `<span style="color:var(--ok)">${esc(tr('erreichbare Richtung'))}</span>` : '') +
+    ` · ` + (R.clearance >= 0 ? `${esc(tr('im sicheren Bereich'))} (${fmt(R.clearance, 1)}° ${esc(tr('bis zum Rand'))})` : `<span class="warn">${esc(tr('außerhalb des sicheren Bereichs'))}</span>`);
+  t += `<br>${esc(tr('Punkt hier'))}: ` + (P.kind === 'outline' || P.kind === 'hole' ? `<b>${esc(tr(P.msg))}</b>` : `<span class="hint">${esc(tr(P.msg || ''))}</span>`);
+  if (!R.limits_off && R.clearance >= -0.01) t += `<br><span class="hint">${esc(tr('Zum Hineinfahren in die blinde Zone den sicheren Bereich abschalten.'))}</span>`;
+  t += `<br>${esc(R.file)}: ` + (R.unsaved ? `<span class="warn">${R.unsaved} ${esc(tr('ungespeicherte Punkte'))}</span>` : esc(tr('gespeichert')));
+  $('refine-status').innerHTML = t;
+  $('refine-add').disabled = !(P.kind === 'outline' || P.kind === 'hole');
+  $('refine-undo').disabled = $('refine-save').disabled = $('refine-discard').disabled = !R.unsaved;
+}
+
+// ---- Switch language ----
+$('opt-lang').value = LANG;
+$('opt-lang').onchange = e => setLang(e.target.value);
+i18nObserver.observe(document.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['title', 'placeholder']});
+setLang(LANG);
+
+// ---- Collapsible cards (state is kept in the browser) ----
+function storeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+document.querySelectorAll('aside .card').forEach(card => {
+  const h = card.querySelector(':scope > h2'); if (!h) return;
+  const key = 'nexplane-card-' + (card.id || h.firstChild.textContent.trim().toLowerCase());
+  const saved = storeGet(key);
+  const collapsed = saved === null ? card.dataset.collapsedDefault === '1' : saved === '1';
+  card.classList.toggle('collapsed', collapsed);
+  h.addEventListener('click', e => {
+    if (e.target.closest('#n-planes')) return;
+    const now = !card.classList.contains('collapsed');
+    card.classList.toggle('collapsed', now); storeSet(key, now ? '1' : '0');
+  });
+});
+
+// ---- Manual control ----
+const JOG_SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5];
+let jogSpeed = 0.5, jogDir = [0, 0], jogTimer = null;
+$('jogspeed').innerHTML = JOG_SPEEDS.map(v => `<button class="btn ${v === jogSpeed ? 'sel' : ''}" data-v="${v}">${LANG === 'en' ? String(v) : String(v).replace('.', ',')}</button>`).join('');
+$('jogspeed').addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  jogSpeed = Number(b.dataset.v);
+  $('jogspeed').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
+});
+function sendJog() { if (jogDir[0] || jogDir[1]) api('jog', {r1: jogDir[0] * jogSpeed, r2: jogDir[1] * jogSpeed}); }
+function setJog(d) {
+  jogDir = d;
+  if (d[0] || d[1]) { sendJog(); if (!jogTimer) jogTimer = setInterval(sendJog, 150); }
+  else { if (jogTimer) { clearInterval(jogTimer); jogTimer = null; } api('jog_stop'); }
+}
+document.querySelectorAll('[data-jog]').forEach(b => {
+  const d = b.dataset.jog.split(',').map(Number);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('active'); setJog(d); });
+  const up = () => { if (b.classList.contains('active')) { b.classList.remove('active'); setJog([0, 0]); } };
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+});
+const arrows = new Set();
+function arrowsToDir() {
+  return [(arrows.has('ArrowRight') ? 1 : 0) - (arrows.has('ArrowLeft') ? 1 : 0), (arrows.has('ArrowUp') ? 1 : 0) - (arrows.has('ArrowDown') ? 1 : 0)];
+}
+window.addEventListener('blur', () => { if (arrows.size) { arrows.clear(); setJog([0, 0]); } });
+document.addEventListener('keyup', e => {
+  if (!e.key.startsWith('Arrow') || !arrows.has(e.key)) return;
+  arrows.delete(e.key); setJog(arrowsToDir()); e.preventDefault();
+});
+$('btn-allstop').onclick = () => { setJog([0, 0]); api('stop'); };
+$('btn-limoff').onclick = () => {
+  if (!S) return;
+  if (S.limits_off) { api('limits_off', {off: false}); return; }
+  if (confirm('Sicheren Bereich abschalten?\n\nUmriss und Sperrzonen werden NICHT mehr überwacht. ' +
+              'Die Montierung kann gegen Stativ oder Säule fahren. Nur mit der Hand am Netzschalter!\n\n' +
+              'Die Verfolgung von Flugzeugen ist gesperrt, bis der Bereich wieder eingeschaltet ist.')) {
+    setJog([0, 0]); api('limits_off', {off: true, confirm: true});
+  }
+};
+$('btn-home').onclick = () => { if (confirm('Zur Home-Stellung fahren?')) api('home'); };
+$('align-sel').onchange = () => { $('align-sky').style.display = $('align-sel').value === '__sky__' ? '' : 'none'; };
+$('btn-align').onclick = () => {
+  const v = $('align-sel').value;
+  const target = v === '__sky__' ? ($('align-sky').value.trim() ? 'sky:' + $('align-sky').value.trim().toLowerCase() : '') : v;
+  if (!target) { addLocalMsg('Bitte einen Objektnamen eingeben.'); return; }
+  const name = target.startsWith('sky:') ? target.slice(4) : target;
+  if (confirm(`Zeigt das Teleskop jetzt genau auf ${name}? Dann wird darauf ausgerichtet.`)) api('align', {target});
+};
+
+$('btn-stop').onclick = () => api('stop');
+$('btn-stop2').onclick = () => api('stop');
+$('btn-flip').onclick = () => { if (confirm('Seitenwechsel testen? Die Montierung dreht dabei die RA-Achse um etwa 180°.')) api('flip_test'); };
+$('btn-reset').onclick = () => api('offset_reset');
+$('btn-corr-save').onclick = () => { if (confirm('Ist das verfolgte Flugzeug jetzt mittig im Bild? Dann wird es als Ausrichtpunkt übernommen.')) api('corr_save'); };
+$('btn-align-plane').onclick = () => { if (confirm('Ist das verfolgte Flugzeug jetzt mittig im Bild? Dann wird es als Ausrichtpunkt übernommen.')) api('corr_save'); };
+$('btn-forget').onclick = () => {
+  if (!confirm('Aktuelle Ausrichtung vergessen? Ausrichtpunkte, Polfehler-Modell und Korrektur werden verworfen, die Verfolgung stoppt.')) return;
+  const home = confirm('Auch die gespeicherte Home-Richtung löschen?\n\nEmpfohlen, wenn die Montierung dabei nicht nach Norden stand (z. B. Tests im Wohnzimmer). Sonst startet NexPlane beim nächsten Mal mit einer falschen Grob-Ausrichtung.\n\nOK = löschen, Abbrechen = behalten');
+  api('forget_alignment', {home});
+};
+$('btn-test-set').onclick = () => {
+  const M = (S && S.manual) || {};
+  if (!confirm('Testausrichtung aus der Home-Stellung setzen? Nur für Tests zuhause, ungenau (einige Grad).' +
+               (M.aligned && !M.test_aligned ? '\n\nDie aktuelle Ausrichtung wird dabei verworfen.' : ''))) return;
+  api('test_align', {action: 'set', confirm: true});
+};
+$('btn-test-flip').onclick = () => api('test_align', {action: 'flip'});
+$('btn-test-end').onclick = () => api('test_align', {action: 'end'});
+$('btn-model-pop').onclick = () => { if (confirm('Letzten Ausrichtpunkt löschen?')) api('model_pop'); };
+$('model-points').addEventListener('click', e => {
+  const b = e.target.closest('[data-delpt]'); if (!b) return;
+  const i = Number(b.dataset.delpt);
+  if (confirm(`Ausrichtpunkt ${i + 1} löschen?`)) api('model_pop', {index: i});
+});
+$('focal-sel').onchange = e => api('set_focal', {mm: Number(e.target.value)});
+document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
+  const [x, y] = b.dataset.off.split(',').map(Number); const s = $('opt-big').checked ? 0.5 : 0.1;
+  api('offset', {daz: x * s, del: y * s});
+});
+document.querySelectorAll('[data-gain]').forEach(b => b.onclick = () => {
+  const [w, d] = b.dataset.gain.split(','); api('gain', {which: w, delta: Number(d)});
+});
+$('btn-quit').onclick = () => { if (confirm('NexPlane beenden? Die Montierung wird gestoppt.')) api('quit'); };
+$('opt-red').onchange = e => { document.body.classList.toggle('red', e.target.checked); document.body.classList.toggle('dark-tiles', !e.target.checked); };
+
+document.addEventListener('keydown', e => {
+  if ((e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') || e.target.tagName === 'SELECT') return;
+  const k = e.key;
+  if (k.startsWith('Arrow')) {
+    e.preventDefault();
+    if (!S || !S.manual || !S.manual.available) return;
+    if (!arrows.has(k)) { arrows.add(k); setJog(arrowsToDir()); }
+    return;
+  }
+  if (k === 'Escape') { setJog([0, 0]); }
+  const small = 0.1, big = 0.5;
+  const moves = {w: [0, small], a: [-small, 0], s: [0, -small], d: [small, 0], k: [0, small], h: [-small, 0], j: [0, -small], l: [small, 0],
+                 W: [0, big], A: [-big, 0], S: [0, -big], D: [big, 0], K: [0, big], H: [-big, 0], J: [0, -big], L: [big, 0]};
+  const gains = {r: ['kp', 0.01], f: ['kp', -0.01], t: ['ki', 0.01], g: ['ki', -0.01], y: ['kd', 0.01], u: ['kd', -0.01]};
+  if (k === 'Escape') api('stop');
+  else if (moves[k]) api('offset', {daz: moves[k][0], del: moves[k][1]});
+  else if (k === 'q' || k === 'Q' || k === 'o' || k === 'O') api('offset_reset');
+  else if (gains[k.toLowerCase()]) { const [w, d] = gains[k.toLowerCase()]; api('gain', {which: w, delta: d}); }
+  else return;
+  e.preventDefault();
+});
+
+// ---------------------------------------------------------------- Sky map
+const sky = $('sky');
+const ctx = sky.getContext('2d');
+let geo = null;   // {cx, cy, R}
+
+function project(az, el) {
+  if (!geo || el < -5) return null;
+  const r = (90 - el) / 95 * geo.R;
+  const mirror = $('opt-mirror').checked ? 1 : -1;     // looking up: east on the left
+  return [geo.cx + mirror * r * Math.sin(az * RAD), geo.cy - r * Math.cos(az * RAD)];
+}
+
+function skyCirclePts(center, radiusDeg, n = 180) {
+  const la1 = center.el * RAD, lo1 = center.az * RAD, d = radiusDeg * RAD, pts = [];
+  for (let i = 0; i <= n; i++) {
+    const b = i / n * 2 * Math.PI;
+    const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(b));
+    const lo2 = lo1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+    pts.push({az: lo2 / RAD, el: la2 / RAD});
+  }
+  return pts;
+}
+function strokePath(pts, color, width = 1, dash = []) {
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash); ctx.beginPath();
+  let pen = false;
+  for (const p of pts) {
+    const xy = project(p.az, p.el);
+    if (!xy) { pen = false; continue; }
+    if (pen) ctx.lineTo(xy[0], xy[1]); else ctx.moveTo(xy[0], xy[1]);
+    pen = true;
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function cross(x, y, s, color, w = 2) {
+  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath();
+  ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
+}
+function text(t, x, y, color, font = '12px system-ui', align = 'left') {
+  t = tr(t);
+  ctx.font = font; ctx.textAlign = align; ctx.lineWidth = 3; ctx.strokeStyle = css('--bg'); ctx.strokeText(t, x, y);
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+
+const blindCanvas = document.createElement('canvas');
+let blindKey = '';
+function renderBlindLayer(w, h, dpr) {
+  const key = [w, h, dpr, $('opt-mirror').checked, document.body.classList.contains('red'), reachVersion, !!blindEnabled()].join('|');
+  if (key === blindKey) return;
+  blindKey = key;
+  blindCanvas.width = Math.round(w * dpr); blindCanvas.height = Math.round(h * dpr);
+  const b = blindCanvas.getContext('2d');
+  b.setTransform(dpr, 0, 0, dpr, 0, 0); b.clearRect(0, 0, w, h);
+  if (!blindEnabled()) return;
+  b.fillStyle = css('--blind');
+  b.beginPath();   // one shared path so that no seams appear between the cells
+  const as = REACH.az_step, es = REACH.el_step;
+  REACH.rows.forEach((row, j) => {
+    const e0 = j * es, e1 = Math.min(90, (j + 1) * es);
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] !== '0') continue;
+      let k = i; while (k + 1 < row.length && row[k + 1] === '0') k++;   // contiguous cells
+      const a0 = i * as, a1 = (k + 1) * as, pts = [];
+      for (let a = a0; a <= a1 + 1e-9; a += Math.min(as, a1 - a0)) pts.push(project(a, e0));
+      for (let a = a1; a >= a0 - 1e-9; a -= Math.min(as, a1 - a0)) pts.push(project(a, e1));
+      if (pts.every(Boolean)) { pts.forEach((p, n) => n ? b.lineTo(p[0], p[1]) : b.moveTo(p[0], p[1])); b.closePath(); }
+      i = k;
+    }
+  });
+  b.fill('nonzero');
+}
+
+function drawSky() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = sky.clientWidth, h = sky.clientHeight;
+  if (w < 80 || h < 80) { requestAnimationFrame(drawSky); return; }
+  if (sky.width !== Math.round(w * dpr) || sky.height !== Math.round(h * dpr)) { sky.width = Math.round(w * dpr); sky.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, w, h);
+  geo = {cx: w / 2, cy: h / 2, R: Math.min(w, h) / 2 - 28};
+  const {cx, cy, R} = geo;
+  renderBlindLayer(w, h, dpr);
+  ctx.drawImage(blindCanvas, 0, 0, w, h);
+
+  // Grid
+  for (const el of [0, 30, 60]) {
+    const r = (90 - el) / 95 * R;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+    ctx.strokeStyle = el === 0 ? css('--horizon') : css('--grid'); ctx.lineWidth = el === 0 ? 2 : 1; ctx.stroke();
+    if (el) text(el + '°', cx + 4, cy - r + 13, css('--muted'), '11px system-ui');
+  }
+  for (const az of [0, 45, 90, 135, 180, 225, 270, 315]) strokePath([{az, el: 0}, {az, el: 89.9}], css('--grid'));
+  const dirs = [['N', 0], ['O', 90], ['S', 180], ['W', 270]];
+  for (const [n, az] of dirs) { const xy = project(az, -3.2); text(n, xy[0], xy[1] + 4, css('--text'), 'bold 14px system-ui', 'center'); }
+  if (!S) { requestAnimationFrame(drawSky); return; }
+
+  // Equator and pole
+  if (S.pole) {
+    strokePath(skyCirclePts(S.pole, 90), css('--eq'), 1.2);
+    strokePath(skyCirclePts(S.pole, 3, 48), css('--eq'), 1.2);
+    const xy = project(S.pole.az, S.pole.el); if (xy) text('Pol', xy[0] + 10, xy[1] + 4, css('--eq'), '11px system-ui');
+  }
+  // Sun and moon
+  if (S.sun) {
+    for (const r of [5, 10, 15, 20]) strokePath(skyCirclePts(S.sun, r), css('--sun'), r === 20 ? 2 : 1, r === 20 ? [] : [4, 4]);
+    const xy = project(S.sun.az, S.sun.el); if (xy) { ctx.fillStyle = css('--sun'); ctx.beginPath(); ctx.arc(xy[0], xy[1], 6, 0, 7); ctx.fill(); text('Sonne', xy[0] + 9, xy[1] - 8, css('--sun')); }
+  }
+  if (S.moon) { const xy = project(S.moon.az, S.moon.el); if (xy) { ctx.fillStyle = css('--moon'); ctx.beginPath(); ctx.arc(xy[0], xy[1], 5, 0, 7); ctx.fill(); text('Mond', xy[0] + 8, xy[1] - 7, css('--moon')); } }
+
+  // Aircraft with trails
+  for (const p of S.planes) {
+    const tracked = p.hex === S.tracked;
+    const color = tracked ? css('--track') : p.in_space ? css('--sat') : css('--plane');
+    const tr = trails.get(p.hex);
+    if (tr && tr.length > 1) { ctx.globalAlpha = .45; strokePath(tr, color, 1.5); ctx.globalAlpha = 1; }
+    const xy = project(p.az, p.el); if (!xy) continue;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xy[0], xy[1], tracked || p.hex === hoverHex ? 5 : 3.5, 0, 7); ctx.fill();
+    if (tracked || p.hex === hoverHex || p.el > 10) text(label(p), xy[0] + 7, xy[1] - 6, color, tracked ? 'bold 13px system-ui' : '11px system-ui');
+  }
+  if (S.fixed_target) { const xy = project(S.fixed_target.az, S.fixed_target.el); if (xy) { ctx.strokeStyle = css('--track'); ctx.lineWidth = 2; ctx.strokeRect(xy[0] - 8, xy[1] - 8, 16, 16); text('Testpunkt', xy[0] + 11, xy[1] - 9, css('--track')); } }
+  if (S.tracked_now) { const xy = project(S.tracked_now.az, S.tracked_now.el); if (xy) { ctx.beginPath(); ctx.arc(xy[0], xy[1], 9, 0, 7); ctx.strokeStyle = css('--track2'); ctx.lineWidth = 2; ctx.stroke(); } }
+  // Telescope
+  if (S.telescope) {
+    const xy = project(S.telescope.az, Math.max(S.telescope.el, -5));
+    const Rf = S.refine || {}, rcol = Rf.active ? (Rf.clearance >= 0 ? css('--ok') : css('--warn')) : css('--scope');
+    if (xy) { cross(xy[0], xy[1], Rf.active ? 16 : 10, rcol); strokePath(skyCirclePts(S.telescope, 1.5, 40), rcol, Rf.active ? 3 : 2); }
+    if (S.telescope.el < 0) text('Teleskop zeigt unter den Horizont', 12, h - 12, css('--warn'), 'bold 13px system-ui');
+  }
+  text($('opt-mirror').checked ? 'Ansicht von oben (wie Landkarte)' : 'Blick nach oben: Norden oben, Osten links', 12, 20, css('--muted'), '12px system-ui');
+  requestAnimationFrame(drawSky);
+}
+
+function nearestPlaneAt(x, y) {
+  let best = null, bd = 22;
+  for (const p of (S ? S.planes : [])) {
+    const xy = project(p.az, p.el); if (!xy) continue;
+    const d = Math.hypot(xy[0] - x, xy[1] - y); if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+sky.addEventListener('mousemove', e => { const p = nearestPlaneAt(e.offsetX, e.offsetY); hoverHex = p ? p.hex : null; sky.style.cursor = p ? 'pointer' : 'default'; });
+sky.addEventListener('click', e => { const p = nearestPlaneAt(e.offsetX, e.offsetY); if (p) api('track', {hex: p.hex}); });
+
+// ---------------------------------------------------------------- Ground map
+let map = null, mapLayers = null, markers = new Map(), centered = false;
+function loadLeaflet() {
+  return new Promise((ok, fail) => {
+    if (window.L) return ok();
+    const s = document.createElement('script'); s.src = '/static/leaflet/leaflet.js';
+    s.onload = ok; s.onerror = fail; document.head.appendChild(s);
+  });
+}
+async function initMap() {
+  if (map) return true;
+  try { await loadLeaflet(); } catch (e) { $('maperr').style.display = 'block'; return false; }
+  map = L.map('map', {zoomControl: true, attributionControl: true}).setView([S ? S.observer.lat : 51, S ? S.observer.lon : 10], 9);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap-Mitwirkende'}).addTo(map);
+  mapLayers = {static: L.layerGroup().addTo(map), blind: L.layerGroup().addTo(map), dynamic: L.layerGroup().addTo(map), planes: L.layerGroup().addTo(map)};
+  return true;
+}
+function destination(lat, lon, bearingDeg, distM) {
+  const R = 6371000, d = distM / R, b = bearingDeg * RAD, la1 = lat * RAD, lo1 = lon * RAD;
+  const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(b));
+  const lo2 = lo1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+  return [la2 / RAD, lo2 / RAD];
+}
+function planeIcon(p, tracked) {
+  const c = tracked ? css('--track') : css('--plane');
+  const svg = `<svg width="26" height="26" viewBox="-13 -13 26 26" style="transform:rotate(${p.track_deg}deg)">
+    <path d="M0,-11 L2,-3 L10,2 L10,4 L2,2 L1.5,8 L4,10 L4,11.5 L0,10.5 L-4,11.5 L-4,10 L-1.5,8 L-2,2 L-10,4 L-10,2 L-2,-3 Z"
+      fill="${c}" stroke="${css('--bg')}" stroke-width="1"/></svg>`;
+  return L.divIcon({className: 'plane-icon', html: svg, iconSize: [26, 26], iconAnchor: [13, 13]});
+}
+let mapBlindKey = '';
+function updateBlindMap() {
+  const alt = Number($('opt-blind-alt').value);
+  const key = [reachVersion, alt, !!blindEnabled(), document.body.classList.contains('red')].join('|');
+  if (key === mapBlindKey) return;
+  mapBlindKey = key;
+  mapLayers.blind.clearLayers();
+  if (!blindEnabled()) return;
+  const o = S.observer, Re = 6371000, dh = alt - (o.alt_m || 0);
+  const as = REACH.az_step, es = REACH.el_step, rows = REACH.rows;
+  const color = getComputedStyle(document.body).getPropertyValue('--blind').trim();
+  const elAt = d => Math.atan2(dh - d * d / (2 * Re), d) / RAD;
+  const shapes = [];   // all areas as one multi-polygon so that no seams appear
+  for (let i = 0; i < rows[0].length; i++) {
+    const a0 = i * as - 0.25, a1 = (i + 1) * as + 0.25;   // slight overlap to avoid seams
+    let start = null;
+    const step = 2000;
+    for (let d = 500; ; d += step) {
+      const el = elAt(d);
+      const inSky = el >= 0 && d <= 450000;
+      const j = Math.min(rows.length - 1, Math.max(0, Math.floor(el / es)));
+      const blind = inSky && rows[j][i] === '0';
+      if (blind && start === null) start = d;
+      if ((!blind || !inSky) && start !== null) {
+        const d0 = start, d1 = d, mid = (a0 + a1) / 2;
+        shapes.push([[destination(o.lat, o.lon, a0, d0), destination(o.lat, o.lon, mid, d0), destination(o.lat, o.lon, a1, d0),
+                      destination(o.lat, o.lon, a1, d1), destination(o.lat, o.lon, mid, d1), destination(o.lat, o.lon, a0, d1)]]);
+        start = null;
+      }
+      if (!inSky) break;
+    }
+  }
+  if (shapes.length) L.polygon(shapes, {stroke: false, fillColor: color, fillOpacity: 1, fillRule: 'nonzero',
+                                        interactive: false}).addTo(mapLayers.blind);
+}
+
+function updateMap() {
+  if (!map || !S) return;
+  updateBlindMap();
+  const o = S.observer;
+  if (!centered) {
+    map.setView([o.lat, o.lon], 9); centered = true;
+    L.circleMarker([o.lat, o.lon], {radius: 6, color: css('--scope'), fillOpacity: 1}).bindTooltip('Standort').addTo(mapLayers.static);
+    for (const km of [10, 25, 50, 100]) {
+      L.circle([o.lat, o.lon], {radius: km * 1000, color: css('--muted'), weight: 1, fill: false, dashArray: '4 6'}).addTo(mapLayers.static);
+      L.marker(destination(o.lat, o.lon, 0, km * 1000), {icon: L.divIcon({className: '', html: `<span style="color:var(--muted);font-size:11px;white-space:nowrap">${km} km</span>`})}).addTo(mapLayers.static);
+    }
+  }
+  mapLayers.dynamic.clearLayers();
+  if (S.telescope) L.polyline([[o.lat, o.lon], destination(o.lat, o.lon, S.telescope.az, 150000)], {color: css('--scope'), weight: 2}).bindTooltip('Blickrichtung Teleskop').addTo(mapLayers.dynamic);
+  // Crosshair where the line of sight reaches the selected flight altitude (same projection as the red areas)
+  if (S.telescope && S.telescope.el > 0) {
+    const alt = Number($('opt-blind-alt').value), Re = 6371000, dh = alt - (o.alt_m || 0);
+    const elAt = d => Math.atan2(dh - d * d / (2 * Re), d) / RAD;
+    let lo = 1, hi = 450000;
+    if (elAt(hi) < S.telescope.el) {
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (elAt(mid) > S.telescope.el) lo = mid; else hi = mid; }
+      const R = S.refine || {}, on = !!R.active;
+      const col = on ? (R.clearance >= 0 ? css('--ok') : css('--warn')) : css('--scope'), sz = on ? 44 : 26;
+      const svg = `<svg width="${sz}" height="${sz}" viewBox="-22 -22 44 44" style="overflow:visible"><g stroke="${col}" stroke-width="${on ? 3 : 2}" fill="none">` +
+        `<circle r="9"/><path d="M-20 0H-5M5 0H20M0 -20V-5M0 5V20"/></g></svg>`;
+      L.marker(destination(o.lat, o.lon, S.telescope.az, lo), {interactive: false, zIndexOffset: 1000,
+        icon: L.divIcon({className: '', html: svg, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2]})}).addTo(mapLayers.dynamic);
+    }
+  }
+  const seen = new Set();
+  for (const p of S.planes) {
+    if (p.in_space || p.lat == null) continue;
+    seen.add(p.hex);
+    const tracked = p.hex === S.tracked;
+    const tr = trails.get(p.hex);
+    if (tr && tr.length > 1) L.polyline(tr.map(q => [q.lat, q.lon]), {color: tracked ? css('--track') : css('--plane'), weight: 2, opacity: .4}).addTo(mapLayers.dynamic);
+    if (tracked) L.polyline([[o.lat, o.lon], [p.lat, p.lon]], {color: css('--track'), weight: 2, dashArray: '6 6'}).addTo(mapLayers.dynamic);
+    let m = markers.get(p.hex);
+    const tip = `${label(p)}  ${fmt(p.alt_m, 0)} m`;
+    if (!m) {
+      m = L.marker([p.lat, p.lon], {icon: planeIcon(p, tracked)}).addTo(mapLayers.planes);
+      m.bindTooltip(tip, {permanent: true, direction: 'right', offset: [12, 0], className: 'lbl'});
+      m.on('click', () => api('track', {hex: p.hex}));
+      markers.set(p.hex, m);
+    } else {
+      m.setLatLng([p.lat, p.lon]); m.setIcon(planeIcon(p, tracked)); m.setTooltipContent(tip);
+    }
+    m.setOpacity(p.el < 5 ? 0.45 : 1);
+  }
+  for (const [hex, m] of markers) if (!seen.has(hex)) { mapLayers.planes.removeLayer(m); markers.delete(hex); }
+}
+
+async function setView(v) {
+  view = v;
+  $('tab-sky').classList.toggle('active', v === 'sky'); $('tab-map').classList.toggle('active', v === 'map');
+  $('sky').style.display = v === 'sky' ? 'block' : 'none';
+  $('map').style.display = v === 'map' ? 'block' : 'none';
+  $('maperr').style.display = 'none';
+  if (v === 'map' && await initMap()) { map.invalidateSize(); updateMap(); }
+}
+$('tab-sky').onclick = () => setView('sky');
+$('tab-map').onclick = () => setView('map');
+
+poll();
+requestAnimationFrame(drawSky);
+</script>
+</body>
+</html>

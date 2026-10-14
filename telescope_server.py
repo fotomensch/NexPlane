@@ -57,6 +57,34 @@ def read_response(telescope: serial.Serial, telescope_protocol: str) -> str:
         response += telescope.read().decode(encoding='ISO-8859-1')
     return response
 
+# Drivers of USB-serial adapters as found in control boxes and EQMOD cables.
+MOUNT_DRIVERS = ('pl2303', 'ch341', 'ch341-uart', 'cp210x', 'ftdi_sio')
+# Drivers of cellular modems (e.g. a laptop's built-in LTE modem): never use.
+MODEM_DRIVERS = ('option', 'option1', 'qcserial', 'sierra', 'qmi_wwan', 'cdc_mbim')
+
+def serial_driver(tty: str) -> str:
+    try:
+        return os.path.basename(os.path.realpath(f'/sys/class/tty/{os.path.basename(tty)}/device/driver'))
+    except OSError:
+        return ''
+
+def find_mount_port() -> str | None:
+    '''
+    Find the mount's serial port. Previously the first /dev/ttyUSB* was simply used;
+    but if the laptop has a built-in LTE modem, that is a modem port.
+    Typical USB-serial adapters are preferred, modems are skipped.
+    '''
+    candidates = [f'/dev/ttyUSB{i}' for i in range(32) if os.path.exists(f'/dev/ttyUSB{i}')]
+    for port in candidates:
+        if serial_driver(port) in MOUNT_DRIVERS:
+            print(f'Montierung vermutlich an {port} (Treiber {serial_driver(port)})')
+            return port
+    for port in candidates:
+        if serial_driver(port) not in MODEM_DRIVERS:
+            print(f'Montierung vermutlich an {port} (Treiber {serial_driver(port) or "unbekannt"})')
+            return port
+    return None
+
 def hello() -> str:
     return 'hello'
 
@@ -172,12 +200,7 @@ def main() -> None:
         observatory_location = None
         serial_port = args.serial_port
         if serial_port == 'auto':
-            serial_port = None
-            for i in range(10):
-                this_port = f'/dev/ttyUSB{i}'
-                if os.path.exists(this_port):
-                    serial_port = this_port
-                    break
+            serial_port = find_mount_port()
             if serial_port is None:
                 print('Unable to find serial port for telescope.')
                 sys.stdout.flush()
