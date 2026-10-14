@@ -254,11 +254,20 @@ The active location can be changed from a list. NexPlane stops the mount and res
 
 ### 9 Language switch
 
-A selector in the header switches the GUI between German and English; the choice is kept in the
-browser. German is currently the source language and `webgui_static/i18n_en.js` translates it with
-exact entries and regular expressions; messages without a matching entry stay German. A rework is
-in progress: English becomes the source language, every GUI text including messages from NexPlane
-follows the selected language, and terminal output is always English.
+A selector in the header switches the GUI between English and German; the choice is kept in the
+browser (default: the browser's language). Every text in the GUI follows the selected language,
+including messages from NexPlane. Terminal output is always English.
+
+- **English is the source language** everywhere: in `webgui.html` and in the Python code.
+- **Messages from Python** are `messages.Msg` objects: an English template with named parameters,
+  e.g. `Msg('Point {n} accepted ({name}).', n=3, name='DLH123')`. `str(msg)` gives the English
+  text for the terminal; the browser receives template and parameters separately, so it can
+  translate the template and fill in the values. No text matching with regular expressions is
+  needed.
+- **German texts** are in `webgui_static/i18n_de.js`, one entry per English template.
+  `devtests/unit/test_i18n.py` collects every template from the Python code (`Msg('...')`), the
+  page script (`T('...')`) and the static HTML and checks that each has a German entry with the
+  same placeholders.
 
 ## Pointing and alignment
 
@@ -490,7 +499,7 @@ All next to `config.yaml`:
 
 | File | Written by | Feature |
 | --- | --- | --- |
-| `limits*.yaml`, `*_vorschau.svg` | `teach_limits.py`, refining in the browser | 1, 2, 23 |
+| `limits*.yaml`, `*_preview.svg` | `teach_limits.py`, refining in the browser | 1, 2, 23 |
 | `align.yaml` | `align.py`, alignment in the browser | upstream, 7 |
 | `home_richtung.yaml` | every alignment with a taught home | 12 |
 | `orte.yaml` | places editor | 16 |

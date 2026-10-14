@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from messages import Msg
+
 def path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'orte.yaml')
 
@@ -33,38 +35,38 @@ def _write(locs: dict[str, dict[str, Any]]) -> None:
         yaml.safe_dump({'locations': locs}, f, allow_unicode=True, sort_keys=True)
     os.replace(tmp, path())
 
-NAME_RE = re.compile(r'^[\w äöüÄÖÜß.\-()]{1,40}$')
+NAME_RE = re.compile(r'^[\w .\-()]{1,40}$')   # \w includes letters with accents and umlauts
 
-def validate(name: str, typ: str, lat: float, lon: float, alt: float) -> str | None:
+def validate(name: str, typ: str, lat: float, lon: float, alt: float) -> Msg | None:
     if not NAME_RE.match(name or '') or name.strip() != name:
-        return 'Name: 1-40 Zeichen, Buchstaben, Ziffern, Leerzeichen, . - ( ) _'
+        return Msg('Name: 1-40 characters: letters, digits, spaces, . - ( ) _')
     if typ not in ('standort', 'landmarke'):
-        return 'Typ muss Standort oder Landmarke sein'
+        return Msg('The type must be location or landmark')
     for v in (lat, lon, alt):
         if not math.isfinite(v):
-            return 'Ungültige Zahl'
+            return Msg('Invalid number')
     if not -90 <= lat <= 90 or not -180 <= lon <= 180:
-        return 'Breite -90..90, Länge -180..180'
+        return Msg('Latitude -90..90, longitude -180..180')
     if not -500 <= alt <= 9000:
-        return 'Höhe -500..9000 m'
+        return Msg('Altitude -500..9000 m')
     return None
 
-def save(name: str, typ: str, lat: float, lon: float, alt: float, config_locations: dict[str, Any]) -> str | None:
+def save(name: str, typ: str, lat: float, lon: float, alt: float, config_locations: dict[str, Any]) -> Msg | None:
     '''Saves/replaces an entry. Returns an error message or None.'''
     err = validate(name, typ, lat, lon, alt)
     if err:
         return err
     own = load()
     if name in config_locations and name not in own:
-        return f'"{name}" steht bereits in config.yaml und kann hier nicht überschrieben werden.'
+        return Msg('"{name}" is already defined in config.yaml and cannot be overwritten here.', name=name)
     own[name] = {'lat_degrees': round(lat, 7), 'lon_degrees': round(lon, 7), 'alt_meters': round(alt, 1), 'typ': typ}
     _write(own)
     return None
 
-def delete(name: str) -> str | None:
+def delete(name: str) -> Msg | None:
     own = load()
     if name not in own:
-        return f'"{name}" ist kein im Browser angelegter Ort (Einträge aus config.yaml dort ändern).'
+        return Msg('"{name}" was not created in the browser (change entries from config.yaml there).', name=name)
     del own[name]
     _write(own)
     return None

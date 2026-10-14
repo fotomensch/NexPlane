@@ -1,4 +1,4 @@
-#!/home/linux/myvenv/bin/python3
+#!/usr/bin/env python3
 '''
 Connection test for the Sky-Watcher control box, without telescope_server and NexPlane.
 
@@ -23,7 +23,7 @@ def usb_info(tty: str) -> str:
     dev = os.path.realpath(f'/sys/class/tty/{name}/device')
     parts = []
     try:
-        parts.append('Treiber ' + os.path.basename(os.path.realpath(dev + '/driver')))
+        parts.append('driver ' + os.path.basename(os.path.realpath(dev + '/driver')))
     except OSError:
         pass
     d = dev
@@ -56,14 +56,14 @@ def holders(path: str) -> list[str]:
 
 def main() -> None:
     ports = sorted(glob.glob('/dev/ttyUSB*')) + sorted(glob.glob('/dev/ttyACM*')) + sorted(glob.glob('/dev/rfcomm*'))
-    print('Serielle Anschluesse:')
+    print('Serial ports:')
     for p in ports:
         h = holders(p)
         print(f'  {p:15s} {usb_info(p)}')
         for x in h:
-            print(f'      offen von {x}')
+            print(f'      opened by {x}')
     if not ports:
-        print('  keine')
+        print('  none')
     pads = []
     for ev in sorted(glob.glob('/sys/class/input/event*')):
         try:
@@ -73,17 +73,17 @@ def main() -> None:
                 pads.append(f'{os.path.basename(ev)}: {n}')
         except OSError:
             pass
-    print('Controller-Eingabegeraete:', ', '.join(pads) if pads else 'keine')
+    print('Game controller input devices:', ', '.join(pads) if pads else 'none')
 
     port = sys.argv[1] if len(sys.argv) > 1 else next((p for p in [f'/dev/ttyUSB{i}' for i in range(10)] if os.path.exists(p)), None)
     if port is None:
-        print('\nKein /dev/ttyUSB* gefunden (so sucht auch telescope_server).')
+        print('\nNo /dev/ttyUSB* found (telescope_server searches the same way).')
         return
-    print(f'\nTeste {port} mit 115200 Baud ...')
+    print(f'\nTesting {port} at 115200 baud ...')
     try:
         s = serial.Serial(port=port, baudrate=115200, timeout=0)
     except Exception as e:
-        print(f'  Kann {port} nicht oeffnen: {e}')
+        print(f'  Cannot open {port}: {e}')
         return
     ok = 0
     for i in range(20):
@@ -96,10 +96,10 @@ def main() -> None:
         dt = (time.monotonic() - t0) * 1000
         good = resp.startswith(b'=') and resp.endswith(b'\r')
         ok += good
-        print(f'  {i + 1:2d}: {"ok  " if good else "FEHL"} {dt:6.1f} ms  Antwort {resp!r}')
+        print(f'  {i + 1:2d}: {"ok  " if good else "FAIL"} {dt:6.1f} ms  response {resp!r}')
         time.sleep(0.1)
     s.close()
-    print(f'\n{ok} von 20 Abfragen beantwortet.')
+    print(f'\n{ok} of 20 queries answered.')
 
 if __name__ == '__main__':
     main()

@@ -139,8 +139,8 @@ def ra_dec_cal(
     # Determine the pole side from the taught home position (see eq_flip.calibrate).
     home_dec_raw = home_dec_raw_from_config(config_data)
     ra_cal, dec_cal, side = eq_flip.calibrate(init_real_ra, init_real_dec, init_scope_ra, init_scope_dec, home_dec_raw)
-    print(f'Ausrichtung auf Seite {side}' + ('' if home_dec_raw is not None else
-          ' (angenommen; ohne sicheren Bereich ist die Seite nicht pruefbar)'))
+    print(f'Aligned on side {side}' + ('' if home_dec_raw is not None else
+          ' (assumed; without a safe area the side cannot be checked)'))
     return util.wrap_rad(ra_cal, 0), util.wrap_rad(dec_cal, 0)
 
 def home_dec_raw_from_config(config_data: dict[str, Any]) -> float | None:

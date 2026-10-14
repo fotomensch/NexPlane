@@ -21,6 +21,8 @@ import time
 
 from typing import Any
 
+from messages import Msg
+
 SIDEREAL_RAD_PER_S = 2 * math.pi / 86164.0905
 
 Vec = tuple[float, float, float]
@@ -196,7 +198,7 @@ class Model:
 
     def fit(self, ra_cal: float, dec_cal: float) -> dict[str, Any]:
         '''
-        Refit to all points. Returns {'ra_cal','dec_cal','full','text'}.
+        Refit to all points. Returns {'ra_cal', 'dec_cal', 'full'} and optionally 'hint' or 'warn' (Msg).
         Without sufficient points: zero point only from the last point, previous polar misalignment is kept.
         '''
         assert self.points
@@ -221,8 +223,9 @@ class Model:
                 ok = std_ex < self.MAX_STD and std_ey < self.MAX_STD
             if ok and max(abs(p[2]), abs(p[3])) > self.MAX_TILT:
                 ok = False
-                result['warn'] = (f'Berechnete Polfehlstellung unplausibel groß ({math.degrees(max(abs(p[2]), abs(p[3]))):.1f}°), '
-                                  'vermutlich ein falsch zentrierter Punkt. Letzten Punkt löschen (□)?')
+                result['warn'] = Msg('The calculated polar misalignment is implausibly large ({tilt:.1f}°), '
+                                     'probably a wrongly centred point. Delete the last point (□)?',
+                                     tilt=math.degrees(max(abs(p[2]), abs(p[3]))))
             if ok:
                 self.set_params(p[2], p[3], p[4], True)
                 self.rms = rms
@@ -230,7 +233,8 @@ class Model:
                 result.update({'ra_cal': p[0], 'dec_cal': p[1], 'full': True})
                 return result
             if 'warn' not in result:
-                result['hint'] = 'Die Punkte liegen noch zu dicht beieinander. Für die Polfehlstellung einen Punkt in deutlich anderer Himmelsrichtung übernehmen.'
+                result['hint'] = Msg('The points are still too close together. For the polar misalignment, '
+                                     'accept a point in a clearly different direction.')
         # Zero point only: keep current polar misalignment, last point exact
         start = [ra_cal, dec_cal, self.ex, self.ey, self.cone] if self.active else [ra_cal, dec_cal, 0.0, 0.0, 0.0]
         p, _ = self._solve(start, [0, 1], [latest])

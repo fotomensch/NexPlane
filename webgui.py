@@ -1,4 +1,3 @@
-#!/home/linux/myvenv/bin/python3
 '''
 Browser GUI for NexPlane.
 
@@ -13,6 +12,9 @@ OpenGL layers (update_planes, get_tracked_plane, stop_tracking,
 get_gains, get_offsets, reset_offsets, update_positions,
 update_telescope_location, update_comm_failure), so that the main loop
 stays unchanged.
+
+Texts for the user are sent as messages.Msg (English template plus parameters); the page
+translates them into the language selected in the browser (see webgui_static/i18n_de.js).
 '''
 
 import collections
@@ -33,6 +35,7 @@ import numpy
 
 import util
 
+from messages import Msg, Text, to_json
 from sbs1 import Airplane
 from util import unwrap
 
@@ -48,6 +51,16 @@ class Exit(Exception):
 def _deg(r: float) -> float:
     return r * 180.0 / math.pi
 
+def _error(msg: Msg) -> dict[str, Any]:
+    '''Reply to a GUI command that was refused.'''
+    return {'ok': False, 'error': msg}
+
+def _json_default(obj: Any) -> Any:
+    '''json.dumps() helper: messages are sent as template plus parameters.'''
+    if isinstance(obj, Msg):
+        return obj.to_json()
+    raise TypeError(f'{type(obj).__name__} is not JSON serializable')
+
 class WebGui:
     def __init__(self, observatory_location: coords.EarthLocation, kp: float, ki: float, kd: float,
                  port: int = 8765, open_browser: bool = True, mount_mode: str = 'eq'):
@@ -61,7 +74,7 @@ class WebGui:
         self.sun_azm_alt: tuple[float, float] | None = None
         self.moon_azm_alt: tuple[float, float] | None = None
         self.comm_failure = False
-        self.messages: collections.deque[tuple[float, str]] = collections.deque(maxlen=20)
+        self.messages: collections.deque[tuple[float, Any]] = collections.deque(maxlen=20)   # (time, to_json(text))
 
         # Set by the GUI
         self.tracked_plane: str | None = None
@@ -80,12 +93,13 @@ class WebGui:
         self.jog_rates = (0.0, 0.0)          # deg/s per axis
         self.jog_time = 0.0                  # last jog command (dead man's switch)
         self.home_requested = False
-        self.home_source = ''
+        self.home_source: Text = ''
         self.align_request: str | None = None
         self.align_targets: list[str] = []
         self.aligned = False
-        self.aligned_text = ''
+        self.aligned_text: Text = ''
         self.test_aligned = False       # rough test alignment for indoor tests (not saved)
+        self.rough_aligned = False      # rough alignment from the saved home direction
         self.location = ''
         self.location_presets: dict[str, tuple[float, float, float]] = {}
         self.location_request: str | None = None
@@ -111,7 +125,7 @@ class WebGui:
         self.focal_mm = 300.0
         self.focal_steps: list[float] = [150.0, 300.0, 600.0]
         self.reach: dict[str, Any] | None = None
-        self.reach_status = ''
+        self.reach_status: Text = ''
         self.reach_version = 0
 
         # Observer's geocentric position and directions (for plane latitude/longitude)
@@ -133,7 +147,7 @@ class WebGui:
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.url = f'http://127.0.0.1:{port}/'
-        print(f'Browser-Oberflaeche: {self.url}')
+        print(f'Browser GUI: {self.url}')
         if open_browser:
             try:
                 webbrowser.open(self.url)
@@ -223,7 +237,7 @@ class WebGui:
 
     JOG_DEADMAN_S = 0.5
 
-    def enable_manual(self, home_source: str, align_targets: list[str], aligned: bool, aligned_text: str) -> None:
+    def enable_manual(self, home_source: Text, align_targets: list[str], aligned: bool, aligned_text: Text) -> None:
         with self.lock:
             self.manual_available = True
             self.home_source = home_source
@@ -318,16 +332,22 @@ class WebGui:
         with self.lock:
             return self.aligned
 
-    def set_reach(self, grid: dict[str, Any] | None, status: str) -> None:
-        '''Grid of reachable sky regions (from reach_map) or a status text.'''
+    def set_reach(self, grid: dict[str, Any] | None, error: Text = '') -> None:
+        '''Grid of reachable sky regions (from reach_map), or an error message if the calculation failed.'''
         with self.lock:
             if grid is not None:
                 self.reach = grid
                 self.reach_status = ''
             else:
-                self.reach_status = status
-                if status and not status.startswith('wird'):
-                    self.messages.append((time.time(), status))
+                self.reach_status = error
+                if error:
+                    self.messages.append((time.time(), to_json(error)))
+            self.reach_version += 1
+
+    def set_reach_calculating(self) -> None:
+        '''The grid of reachable sky regions is being recalculated.'''
+        with self.lock:
+            self.reach_status = Msg('calculating …')
             self.reach_version += 1
 
     def pop_location_request(self) -> str | None:
@@ -359,11 +379,12 @@ class WebGui:
             req, self.align_request = self.align_request, None
             return req
 
-    def set_aligned(self, text: str, test: bool = False) -> None:
+    def set_aligned(self, text: Text, test: bool = False, rough: bool = False) -> None:
         with self.lock:
             self.aligned = True
             self.aligned_text = text
             self.test_aligned = test
+            self.rough_aligned = rough
 
     def is_test_aligned(self) -> bool:
         with self.lock:
@@ -374,16 +395,17 @@ class WebGui:
             self.aligned = False
             self.aligned_text = ''
             self.test_aligned = False
+            self.rough_aligned = False
             self.tracked_plane = None
             self.fixed_target = None
             self.reach = None
             self.reach_status = ''
             self.reach_version += 1
 
-    def notify(self, text: str) -> None:
-        '''Show a message (e.g. from the limit monitor) in the GUI.'''
+    def notify(self, text: Text) -> None:
+        '''Show a message (e.g. from the limit monitor) in the GUI and, in English, in the terminal.'''
         with self.lock:
-            self.messages.append((time.time(), text))
+            self.messages.append((time.time(), to_json(text)))
         print(text)
 
     # ------------------------------------------------------------------
@@ -422,16 +444,17 @@ class WebGui:
                 'correction': self.corr_info,
                 'gamepad': self.gamepad_info,
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
-                          'status': self.reach_status},
+                          'status': to_json(self.reach_status)},
                 'location': {'current': self.location,
                              'presets': [{'name': n, 'lat': v[0], 'lon': v[1], 'alt': v[2],
                                           'typ': self.location_types.get(n, 'standort'),
                                           'own': n in self.location_own}
                                          for n, v in self.location_presets.items()]},
-                'manual': {'available': self.manual_available, 'home_source': self.home_source,
+                'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
-                           'aligned': self.aligned, 'aligned_text': self.aligned_text,
+                           'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
                            'test_aligned': self.aligned and self.test_aligned,
+                           'rough_aligned': self.aligned and self.rough_aligned,
                            'jogging': time.monotonic() - self.jog_time <= self.JOG_DEADMAN_S and self.jog_rates != (0.0, 0.0)},
                 'fixed_target': ({'az': _deg(self.fixed_target['az']), 'el': _deg(self.fixed_target['el']),
                                   'side': self.fixed_target['side']} if self.fixed_target else None),
@@ -513,18 +536,18 @@ class WebGui:
     def command(self, name: str, data: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
             if name == 'flip_test' and self.manual_available and not self.aligned:
-                return {'ok': False, 'error': 'Erst ausrichten (Karte "Steuerung & Ausrichtung").'}
+                return _error(Msg('Align first (card "Control & alignment").'))
             if name in ('track', 'flip_test') and self.limits_off:
-                return {'ok': False, 'error': 'Sicherer Bereich ist abgeschaltet. Erst wieder einschalten.'}
+                return _error(Msg('The safe area is disabled. Re-enable it first.'))
             if name == 'refine':
                 action = data.get('action')
                 if not self.profiles:
-                    return {'ok': False, 'error': 'Kein sicherer Bereich konfiguriert'}
+                    return _error(Msg('No safe area configured'))
                 if data.get('alt_m') is not None:
                     try:
                         self.refine_alt_m = max(0.0, min(20000.0, float(data['alt_m'])))
                     except (TypeError, ValueError):
-                        return {'ok': False, 'error': 'Ungültige Höhe'}
+                        return _error(Msg('Invalid altitude'))
                 if action == 'alt':
                     return {'ok': True}
                 if action in ('on', 'off'):
@@ -533,17 +556,17 @@ class WebGui:
                         self.refine_info = {}
                     return {'ok': True}
                 if action not in ('add', 'undo', 'save', 'discard'):
-                    return {'ok': False, 'error': 'Unbekannter Befehl'}
+                    return _error(Msg('Unknown command'))
                 if not self.refine_active:
-                    return {'ok': False, 'error': 'Grenzen verfeinern ist nicht eingeschaltet'}
+                    return _error(Msg('Refine limits is not active'))
                 self.refine_queue.append(action)
                 return {'ok': True}
             if name == 'limits_off':
                 if not self.profiles:
-                    return {'ok': False, 'error': 'Kein sicherer Bereich konfiguriert'}
+                    return _error(Msg('No safe area configured'))
                 off = bool(data.get('off'))
                 if off and data.get('confirm') is not True:
-                    return {'ok': False, 'error': 'Bestaetigung fehlt'}
+                    return _error(Msg('Confirmation missing'))
                 if off:
                     self.tracked_plane = None
                     self.fixed_target = None
@@ -552,9 +575,9 @@ class WebGui:
             if name == 'set_profile':
                 prof = data.get('name')
                 if not isinstance(prof, str) or prof not in self.profiles:
-                    return {'ok': False, 'error': 'Unbekanntes Profil'}
+                    return _error(Msg('Unknown profile'))
                 if prof == self.profile:
-                    return {'ok': False, 'error': 'Dieses Profil ist bereits aktiv'}
+                    return _error(Msg('This profile is already active'))
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.home_requested = False
@@ -569,17 +592,17 @@ class WebGui:
                                     'lon': float(data['lon']), 'alt': float(data.get('alt', 0.0)),
                                     'activate': bool(data.get('activate', False))})
                     except (KeyError, TypeError, ValueError):
-                        return {'ok': False, 'error': 'Breite, Länge und Höhe als Zahlen angeben'}
+                        return _error(Msg('Enter latitude, longitude and altitude as numbers'))
                 self.orte_queue.append(req)
                 return {'ok': True}
             if name == 'set_location':
                 loc = data.get('name')
                 if not isinstance(loc, str) or loc not in self.location_presets:
-                    return {'ok': False, 'error': 'Unbekannter Standort'}
+                    return _error(Msg('Unknown location'))
                 if self.location_types.get(loc) == 'landmarke':
-                    return {'ok': False, 'error': 'Das ist eine Landmarke, kein Standort'}
+                    return _error(Msg('This is a landmark, not a location'))
                 if loc == self.location:
-                    return {'ok': False, 'error': 'Dieser Standort ist bereits aktiv'}
+                    return _error(Msg('This location is already active'))
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.home_requested = False
@@ -588,11 +611,11 @@ class WebGui:
                 return {'ok': True}
             if name == 'jog':
                 if not self.manual_available:
-                    return {'ok': False, 'error': 'Handsteuerung nicht verfuegbar'}
+                    return _error(Msg('Manual control not available'))
                 r1 = float(data.get('r1', 0.0))
                 r2 = float(data.get('r2', 0.0))
                 if abs(r1) > 5.0 or abs(r2) > 5.0:
-                    return {'ok': False, 'error': 'Geschwindigkeit zu hoch'}
+                    return _error(Msg('Speed too high'))
                 if self.aligned:
                     self.tracked_plane = None   # before alignment the aiming target stays selected
                 self.fixed_target = None
@@ -605,7 +628,7 @@ class WebGui:
                 return {'ok': True}
             if name == 'home':
                 if not self.manual_available:
-                    return {'ok': False, 'error': 'Home-Fahrt nicht verfuegbar'}
+                    return _error(Msg('Go-home not available'))
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.jog_rates = (0.0, 0.0)
@@ -614,10 +637,10 @@ class WebGui:
             if name == 'align':
                 target = data.get('target')
                 if not self.manual_available or not isinstance(target, str) or not target.strip():
-                    return {'ok': False, 'error': 'Kein Ausrichtungsziel angegeben'}
+                    return _error(Msg('No alignment target given'))
                 target = target.strip()
                 if not target.startswith('sky:') and target not in self.align_targets:
-                    return {'ok': False, 'error': 'Unbekannte Landmarke'}
+                    return _error(Msg('Unknown landmark'))
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.home_requested = False
@@ -627,7 +650,7 @@ class WebGui:
             if name == 'track':
                 hex_id = data.get('hex')
                 if not isinstance(hex_id, str) or hex_id not in self.planes:
-                    return {'ok': False, 'error': 'Unbekanntes Ziel'}
+                    return _error(Msg('Unknown target'))
                 self.tracked_plane = hex_id
                 self.fixed_target = None
                 self.azm_offset = 0.0
@@ -639,10 +662,10 @@ class WebGui:
                 self.jog_rates = (0.0, 0.0)
             elif name == 'flip_test':
                 if self.telescope_azm_alt is None or self.mount_mode != 'eq':
-                    return {'ok': False, 'error': 'Seitenwechsel nur im EQ-Modus mit bekannter Teleskopstellung'}
+                    return _error(Msg('Side change only in EQ mode with a known telescope position'))
                 az, el = self.telescope_azm_alt
                 if el < 5 / 180 * math.pi:
-                    return {'ok': False, 'error': 'Teleskop zeigt zu tief (unter 5 Grad) fuer den Test'}
+                    return _error(Msg('The telescope points too low (below 5 degrees) for the test'))
                 self.tracked_plane = None
                 self.fixed_target = {'az': az, 'el': el, 'side': None}
                 self.azm_offset = 0.0
@@ -651,7 +674,7 @@ class WebGui:
                 daz = float(data.get('daz', 0.0))
                 dele = float(data.get('del', 0.0))
                 if abs(daz) > 5 or abs(dele) > 5:
-                    return {'ok': False, 'error': 'Korrektur zu gross'}
+                    return _error(Msg('Correction too large'))
                 if self.axis_correction:
                     # x = right/left in the image, y = up/down in the image (degrees)
                     self.corr_queue.append(('step', daz, dele))
@@ -665,48 +688,48 @@ class WebGui:
                     self.corr_queue.append(('reset', 0.0, 0.0))
             elif name == 'corr_save':
                 if not self.axis_correction:
-                    return {'ok': False, 'error': 'Nur im EQ-Modus verfuegbar'}
+                    return _error(Msg('Only available in EQ mode'))
                 self.corr_queue.append(('save', 0.0, 0.0))
             elif name == 'forget_alignment':
                 if not self.axis_correction:
-                    return {'ok': False, 'error': 'Nur im EQ-Modus verfuegbar'}
+                    return _error(Msg('Only available in EQ mode'))
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.corr_queue.append(('forget', 1.0 if data.get('home') else 0.0, 0.0))
             elif name == 'test_align':
                 if not self.axis_correction or not self.manual_available:
-                    return {'ok': False, 'error': 'Nur im EQ-Modus mit Montierungssteuerung verfuegbar'}
+                    return _error(Msg('Only available in EQ mode with mount control'))
                 action = data.get('action')
                 if action not in ('set', 'flip', 'end'):
-                    return {'ok': False, 'error': 'Unbekannter Befehl'}
+                    return _error(Msg('Unknown command'))
                 if action in ('flip', 'end') and not (self.aligned and self.test_aligned):
-                    return {'ok': False, 'error': 'Testmodus ist nicht aktiv'}
+                    return _error(Msg('Test mode is not active'))
                 if action == 'set' and self.aligned and not self.test_aligned and data.get('confirm') is not True:
-                    return {'ok': False, 'error': 'Bestaetigung fehlt'}
+                    return _error(Msg('Confirmation missing'))
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.corr_queue.append(('test_' + action, 0.0, 0.0))
             elif name == 'model_pop':
                 if not self.axis_correction:
-                    return {'ok': False, 'error': 'Nur im EQ-Modus verfuegbar'}
+                    return _error(Msg('Only available in EQ mode'))
                 idx = data.get('index')
                 self.corr_queue.append(('pop', float(idx) if isinstance(idx, int) and idx >= 0 else -1.0, 0.0))
             elif name == 'set_focal':
                 mm = float(data.get('mm', 0))
                 if not 10 <= mm <= 5000:
-                    return {'ok': False, 'error': 'Ungueltige Brennweite'}
+                    return _error(Msg('Invalid focal length'))
                 self.focal_mm = mm
             elif name == 'gain':
                 which = data.get('which')
                 delta = float(data.get('delta', 0.0))
                 if which not in ('kp', 'ki', 'kd') or abs(delta) > 0.1:
-                    return {'ok': False, 'error': 'Ungueltige Reglerangabe'}
+                    return _error(Msg('Invalid controller value'))
                 setattr(self, which, getattr(self, which) + delta)
                 self.gain_changes += 1
             elif name == 'quit':
                 self.quit_requested = True
             else:
-                return {'ok': False, 'error': 'Unbekannter Befehl'}
+                return _error(Msg('Unknown command'))
         return {'ok': True}
 
     # ------------------------------------------------------------------
@@ -729,7 +752,7 @@ class WebGui:
                 self.wfile.write(body)
 
             def _json(self, code: int, obj: Any) -> None:
-                self._send(code, json.dumps(obj).encode('utf-8'), 'application/json; charset=utf-8')
+                self._send(code, json.dumps(obj, default=_json_default).encode('utf-8'), 'application/json; charset=utf-8')
 
             def _host_ok(self) -> bool:
                 host = (self.headers.get('Host') or '').split(':')[0]
@@ -747,7 +770,7 @@ class WebGui:
                         with open(HTML_FILE, encoding='utf-8') as f:
                             html = f.read().replace('__NEXPLANE_TOKEN__', webgui.token)
                     except OSError:
-                        self._send(500, b'webgui.html fehlt', 'text/plain; charset=utf-8')
+                        self._send(500, b'webgui.html is missing', 'text/plain; charset=utf-8')
                         return
                     self._send(200, html.encode('utf-8'), 'text/html; charset=utf-8')
                 elif self.path.startswith('/static/'):
@@ -771,7 +794,7 @@ class WebGui:
                         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                             raise ValueError
                     except (KeyError, ValueError, IndexError):
-                        self._json(400, {'ok': False, 'error': 'Ungueltige Anfrage'})
+                        self._json(400, _error(Msg('Invalid request')))
                         return
                     self._json(200, elevation.lookup(lat, lon))
                 elif self.path == '/api/reach':
@@ -806,7 +829,7 @@ class WebGui:
                     if not isinstance(data, dict):
                         raise ValueError
                 except Exception:
-                    self._json(400, {'ok': False, 'error': 'Ungueltige Anfrage'})
+                    self._json(400, _error(Msg('Invalid request')))
                     return
                 self._json(200, webgui.command(self.path[len('/api/'):], data))
 

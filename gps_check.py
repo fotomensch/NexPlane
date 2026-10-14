@@ -1,10 +1,10 @@
-#!/home/linux/myvenv/bin/python3
+#!/usr/bin/env python3
 '''
 Checks whether the built-in LTE modem (e.g. Dell DW5821e) has a GPS receiver and
 delivers a position.
 
     ./gps_check.py                 (wait up to 3 minutes for a position)
-    ./gps_check.py --dauer 600     (wait longer, e.g. the first time / cold start)
+    ./gps_check.py --duration 600  (wait longer, e.g. the first time / cold start)
 
 Best run outdoors or near a window: the modem uses the laptop antennas,
 a cold start can take several minutes.
@@ -33,9 +33,9 @@ def run(cmd: list[str], timeout: float = 15) -> tuple[int, str]:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         return p.returncode, (p.stdout + p.stderr).strip()
     except FileNotFoundError:
-        return 127, f'{cmd[0]} nicht installiert'
+        return 127, f'{cmd[0]} is not installed'
     except subprocess.TimeoutExpired:
-        return 124, 'Zeitueberschreitung'
+        return 124, 'timeout'
 
 def driver(tty: str) -> str:
     try:
@@ -65,49 +65,49 @@ def inject_xtra(modem: str, location_status: str) -> None:
     path = '/tmp/nexplane_xtra.bin'
     for url in urls:
         try:
-            print(f'  Lade Hilfsdaten von {url} ...')
+            print(f'  Downloading assistance data from {url} ...')
             with urllib.request.urlopen(url, timeout=20) as r, open(path, 'wb') as f:
                 f.write(r.read())
             break
         except Exception as e:
-            print(f'    fehlgeschlagen: {e}')
+            print(f'    failed: {e}')
     else:
-        print('  Hilfsdaten konnten nicht geladen werden (Internet?).')
+        print('  The assistance data could not be downloaded (internet?).')
         return
     code, out = run(['mmcli', '-m', modem, f'--location-inject-assistance-data={path}'], timeout=60)
-    print('  Hilfsdaten ans Modem: ' + (out or 'ok'))
+    print('  Assistance data to the modem: ' + (out or 'ok'))
     if code != 0:
-        print('  -> Ging nicht. Mit sudo erneut versuchen.')
+        print('  -> That did not work. Try again with sudo.')
 
 def gsv_summary(sats: dict[str, int]) -> str:
     good = sorted((snr for snr in sats.values() if snr > 0), reverse=True)
-    return f'{len(sats)} Satelliten gesehen, {len(good)} mit Signal' + (f' (beste {good[:4]} dB)' if good else '')
+    return f'{len(sats)} satellites seen, {len(good)} with signal' + (f' (best {good[:4]} dB)' if good else '')
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Prueft den GPS-Empfaenger im LTE-Modem.')
-    parser.add_argument('--dauer', type=int, default=180, help='Sekunden auf eine Position warten (Standard 180)')
+    parser = argparse.ArgumentParser(description='Checks the GPS receiver in the LTE modem.')
+    parser.add_argument('--duration', type=int, default=180, help='Seconds to wait for a position (default 180)')
     parser.add_argument('--xtra', action='store_true',
-                        help='Hilfsdaten (Satellitenbahnen) ueber das Internet des Laptops laden und ans Modem geben; '
-                             'verkuerzt den Kaltstart stark. Braucht meist sudo.')
+                        help='Download assistance data (satellite orbits) over the laptop\'s internet connection and '
+                             'pass it to the modem; shortens a cold start a lot. Usually needs sudo.')
     args = parser.parse_args()
 
-    print('== 1. Flugmodus / rfkill')
+    print('== 1. Flight mode / rfkill')
     code, out = run(['rfkill', 'list'])
     print(out if code == 0 else f'  rfkill: {out}')
     if re.search(r'(?is)wwan.*?Soft blocked: yes', out):
-        print('  -> Mobilfunk (WWAN) ist abgeschaltet. Einschalten mit: rfkill unblock wwan')
+        print('  -> Mobile broadband (WWAN) is disabled. Enable it with: rfkill unblock wwan')
 
-    print('\n== 2. Modem-Anschluesse')
+    print('\n== 2. Modem ports')
     ports = [p for p in sorted(glob.glob('/dev/ttyUSB*')) + sorted(glob.glob('/dev/wwan*')) if driver(p) in MODEM_DRIVERS or '/wwan' in p]
     for p in ports:
-        print(f'  {p}  (Treiber {driver(p) or "?"})')
+        print(f'  {p}  (driver {driver(p) or "?"})')
     if not ports:
-        print('  keine Modem-Anschluesse gefunden')
+        print('  no modem ports found')
 
     print('\n== 3. ModemManager')
     modem = None
     if not shutil.which('mmcli'):
-        print('  mmcli nicht installiert (Paket modemmanager). Ueberspringe.')
+        print('  mmcli is not installed (package modemmanager). Skipping.')
     else:
         code, out = run(['mmcli', '-L'])
         print('  ' + out.replace('\n', '\n  '))
@@ -119,20 +119,20 @@ def main() -> None:
                 if any(k in line for k in ('model', 'manufacturer', 'firmware', 'state', 'power state')):
                     print('  ' + line.strip())
             code, out = run(['mmcli', '-m', modem, '--location-status'])
-            print('  Ortung:\n  ' + out.replace('\n', '\n  '))
+            print('  Location:\n  ' + out.replace('\n', '\n  '))
             if 'gps' not in out.lower():
-                print('  -> ModemManager meldet keine GPS-Faehigkeit fuer dieses Modem.')
+                print('  -> ModemManager reports no GPS capability for this modem.')
             if args.xtra:
                 inject_xtra(modem, out)
-            print('  Schalte GPS ein ...')
+            print('  Enabling GPS ...')
             code, out = run(['mmcli', '-m', modem, '--location-enable-gps-nmea', '--location-enable-gps-raw'])
             print('  ' + (out or 'ok'))
             if code != 0 and ('not authorized' in out.lower() or 'permission' in out.lower()):
-                print('  -> Keine Berechtigung. Das Skript bitte noch einmal mit sudo starten.')
+                print('  -> Permission denied. Please run the script again with sudo.')
         else:
-            print('  Kein Modem bei ModemManager angemeldet (Flugmodus? ModemManager laeuft nicht?).')
+            print('  No modem registered with ModemManager (flight mode? ModemManager not running?).')
 
-    print(f'\n== 4. Warte bis zu {args.dauer} s auf eine Position (Strg+C bricht ab)')
+    print(f'\n== 4. Waiting up to {args.duration} s for a position (Ctrl+C aborts)')
     # Listen passively on the modem ports for NMEA (read only, send no commands)
     fds: dict[int, str] = {}
     for p in ports:
@@ -141,7 +141,7 @@ def main() -> None:
         try:
             fds[os.open(p, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)] = p
         except OSError as e:
-            print(f'  {p} nicht lesbar ({e.strerror})')
+            print(f'  {p} is not readable ({e.strerror})')
     buffers = {fd: '' for fd in fds}
     nmea_seen: set[str] = set()
     sats: dict[str, int] = {}
@@ -150,7 +150,7 @@ def main() -> None:
     last_mm = 0.0
     found = None
     try:
-        while time.monotonic() - t0 < args.dauer and found is None:
+        while time.monotonic() - t0 < args.duration and found is None:
             if fds:
                 ready, _, _ = select.select(list(fds), [], [], 1.0)
                 for fd in ready:
@@ -163,7 +163,7 @@ def main() -> None:
                         line = line.strip()
                         if line.startswith('$'):
                             if fds[fd] not in nmea_seen:
-                                print(f'  NMEA-Daten auf {fds[fd]}: {line[:60]}')
+                                print(f'  NMEA data on {fds[fd]}: {line[:60]}')
                                 nmea_seen.add(fds[fd])
                             if 'GSV' in line[:7]:
                                 f = line.split('*')[0].split(',')
@@ -172,7 +172,7 @@ def main() -> None:
                                         sats[line[1:3] + f[k]] = int(f[k + 3]) if f[k + 3].isdigit() else 0
                             g = parse_nmea_gga(line)
                             if g and g[3] > 0:
-                                found = (g, f'NMEA auf {fds[fd]}')
+                                found = (g, f'NMEA on {fds[fd]}')
             else:
                 time.sleep(1.0)
             if modem and time.monotonic() - last_mm > 5:
@@ -191,26 +191,26 @@ def main() -> None:
                               float(m_alt.group(1)) if m_alt else 0.0, 1, 0), 'ModemManager')
             if time.monotonic() - last_report > 30:
                 last_report = time.monotonic()
-                print(f'  {int(time.monotonic() - t0):4d} s: noch keine Position; {gsv_summary(sats)}', flush=True)
+                print(f'  {int(time.monotonic() - t0):4d} s: no position yet; {gsv_summary(sats)}', flush=True)
     except KeyboardInterrupt:
         pass
     for fd in fds:
         os.close(fd)
 
-    print('\n== Ergebnis')
+    print('\n== Result')
     if found:
-        (lat, lon, alt, fix, sats), src = found
-        print(f'  GPS FUNKTIONIERT ({src}): Breite {lat:.6f}, Laenge {lon:.6f}, Hoehe {alt:.0f} m'
-              + (f', {sats} Satelliten' if sats else ''))
+        (lat, lon, alt, fix, n_sats), src = found
+        print(f'  GPS WORKS ({src}): latitude {lat:.6f}, longitude {lon:.6f}, altitude {alt:.0f} m'
+              + (f', {n_sats} satellites' if n_sats else ''))
     elif nmea_seen:
-        print('  GPS-Empfaenger vorhanden (NMEA-Daten kommen), aber noch keine Position. '
-              'Laenger und unter freiem Himmel versuchen: --dauer 600')
+        print('  GPS receiver present (NMEA data arrives), but no position yet. '
+              'Try longer and under the open sky: --duration 600')
     elif modem:
-        print('  Keine Position und keine NMEA-Daten. Moeglich: Modem hat kein GPS, GPS ist in der Firmware '
-              'abgeschaltet, oder es braucht laenger (--dauer 600, draussen).')
+        print('  No position and no NMEA data. Possible causes: the modem has no GPS, GPS is disabled in the '
+              'firmware, or it needs longer (--duration 600, outdoors).')
     else:
-        print('  Kein Modem erreichbar. rfkill/Flugmodus und ModemManager pruefen.')
-    print('  Bitte die komplette Ausgabe zurueckschicken.')
+        print('  No modem reachable. Check rfkill/flight mode and ModemManager.')
+    print('  Please send back the complete output.')
 
 if __name__ == '__main__':
     main()

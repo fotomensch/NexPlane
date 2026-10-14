@@ -77,11 +77,11 @@ def find_mount_port() -> str | None:
     candidates = [f'/dev/ttyUSB{i}' for i in range(32) if os.path.exists(f'/dev/ttyUSB{i}')]
     for port in candidates:
         if serial_driver(port) in MOUNT_DRIVERS:
-            print(f'Montierung vermutlich an {port} (Treiber {serial_driver(port)})')
+            print(f'Mount probably at {port} (driver {serial_driver(port)})')
             return port
     for port in candidates:
         if serial_driver(port) not in MODEM_DRIVERS:
-            print(f'Montierung vermutlich an {port} (Treiber {serial_driver(port) or "unbekannt"})')
+            print(f'Mount probably at {port} (driver {serial_driver(port) or "unknown"})')
             return port
     return None
 

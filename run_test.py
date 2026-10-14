@@ -42,13 +42,19 @@ def run_mypy() -> None:
         'mypy',
         'align.py',
         'dump_config.py',
+        'gamepad.py',
+        'gps_check.py',
+        'mount_check.py',
         'nexplane.py',
         'rpc_client_test.py',
         'rpc_server_test.py',
         'run_test.py',
         'satellites.py',
         'skywatcher_wifi_hootl.py',
+        'start_nexplane.py',
+        'teach_limits.py',
         'telescope_server.py',
+        'webgui.py',
     ])
 
 def satellites() -> Any:

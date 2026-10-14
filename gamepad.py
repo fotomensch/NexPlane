@@ -1,4 +1,4 @@
-#!/home/linux/myvenv/bin/python3
+#!/usr/bin/env python3
 '''
 Gamepad (e.g. PS4 controller via Bluetooth) as a control device for NexPlane.
 
@@ -23,6 +23,8 @@ import threading
 import time
 
 from typing import Any
+
+from messages import Msg, Text
 
 # --- Linux input constants (linux/input-event-codes.h) ----------------------
 EV_SYN, EV_KEY, EV_ABS, EV_FF = 0x00, 0x01, 0x03, 0x15
@@ -123,7 +125,7 @@ class Gamepad:
         self.hat = {ABS_HAT0X: 0, ABS_HAT0Y: 0}
         self.connected = False
         self.name = ''
-        self.error = ''
+        self.error: Text = ''
         self.fd: int | None = None
         self.ff_ids: dict[tuple[int, int, int], int] = {}
         self.stop_flag = False
@@ -208,7 +210,7 @@ class Gamepad:
         else:
             found = find_device(self.name_filter)
             if found is None:
-                self.error = 'Kein Gamepad gefunden (Bluetooth verbunden?)'
+                self.error = Msg('No gamepad found (Bluetooth connected?)')
                 return False
             dev = found
         try:
@@ -217,8 +219,8 @@ class Gamepad:
             except OSError:
                 fd = os.open(dev['path'], os.O_RDONLY | os.O_NONBLOCK)
         except PermissionError:
-            self.error = (f'Kein Zugriff auf {dev["path"]}: "sudo usermod -aG input $USER" ausfuehren '
-                          'und neu anmelden.')
+            self.error = Msg('No access to {path}: run "sudo usermod -aG input $USER" and log in again.',
+                             path=dev['path'])
             return False
         except OSError as e:
             self.error = f'{dev["path"]}: {e}'
@@ -283,45 +285,46 @@ class Gamepad:
                     continue
                 data = os.read(fd, EVENT_SIZE * 64)
                 if not data:
-                    raise OSError(errno.ENODEV, 'Geraet getrennt')
+                    raise OSError(errno.ENODEV, 'device disconnected')
                 for off in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
                     _, _, etype, code, value = struct.unpack_from(EVENT_FMT, data, off)
                     self.handle(etype, code, value)
             except BlockingIOError:
                 continue
             except (OSError, ValueError) as e:
-                self.error = f'Verbindung zum Gamepad unterbrochen ({e}); suche erneut ...'
+                self.error = Msg('Connection to the gamepad lost ({error}); searching again ...', error=str(e))
                 self._close_fd()
                 time.sleep(1.0)
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Gamepad testen: zeigt Geraete, Tasten und Achsen an.')
-    parser.add_argument('--test', action='store_true', help='Tasten und Achsen live anzeigen')
-    parser.add_argument('--name', default='', help='Nur Geraete, deren Name diesen Text enthaelt')
-    parser.add_argument('--device', default=None, help='Geraetedatei direkt angeben, z. B. /dev/input/event17')
+    parser = argparse.ArgumentParser(description='Test a gamepad: shows input devices, buttons and axes.')
+    parser.add_argument('--test', action='store_true', help='Show buttons and axes live')
+    parser.add_argument('--name', default='', help='Only devices whose name contains this text')
+    parser.add_argument('--device', default=None, help='Device file to use, e.g. /dev/input/event17')
     args = parser.parse_args()
 
-    print('Eingabegeraete:')
+    print('Input devices:')
     for dev in list_devices():
         print(f'  {dev["path"]:22s} {"GAMEPAD " if dev["gamepad"] else "        "} {dev["name"]}')
     if not args.test:
-        print('\nMit --test werden Tasten und Achsen live angezeigt.')
+        print('\nWith --test, buttons and axes are shown live.')
         return
     pad = Gamepad(args.name, path=args.device)
-    print('\nWarte auf Gamepad ... (Strg+C beendet). Jede Taste vibriert kurz.')
+    print('\nWaiting for a gamepad ... (Ctrl+C quits). Every button press vibrates briefly.')
     last_err = ''
     shown_name = ''
     try:
         while True:
             time.sleep(0.1)
-            if pad.error and pad.error != last_err:
-                print('\n' + pad.error)
-                last_err = pad.error
+            err = str(pad.error)
+            if err and err != last_err:
+                print('\n' + err)
+                last_err = err
             if pad.connected and pad.name != shown_name:
-                print(f'\nVerbunden: {pad.name}')
+                print(f'\nConnected: {pad.name}')
                 shown_name = pad.name
             for p in pad.pop_presses():
-                print(f'\nTaste: {p}')
+                print(f'\nButton: {p}')
                 pad.rumble(ms=80)
             a = pad.axes()
             print('\r' + '  '.join(f'{k} {a[k]:+.2f}' for k in ('lx', 'ly', 'rx', 'ry', 'l2', 'r2')) + '   ',

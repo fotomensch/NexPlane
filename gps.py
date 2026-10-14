@@ -15,6 +15,8 @@ import time
 
 from typing import Any
 
+from messages import Msg, Text, to_json
+
 def parse_gga(line: str) -> tuple[float, float, float, int, int] | None:
     '''$..GGA -> (latitude, longitude, altitude above sea level, fix quality, satellites) or None without a fix.'''
     f = line.strip().split('*')[0].split(',')
@@ -45,7 +47,7 @@ class GpsReader:
         self.interval = interval_s
         self.lock = threading.Lock()
         self.fix: dict[str, Any] | None = None
-        self.status = 'wird gesucht …'
+        self.status: Text = Msg('searching …')
         self.stop_flag = False
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -56,12 +58,12 @@ class GpsReader:
             status = self.status
         if fix:
             fix['age_s'] = round(time.time() - fix['t'], 0)
-        return {'status': status, 'fix': fix}
+        return {'status': to_json(status), 'fix': fix}
 
     def close(self) -> None:
         self.stop_flag = True
 
-    def _set(self, status: str, fix: dict[str, Any] | None = None) -> None:
+    def _set(self, status: Text, fix: dict[str, Any] | None = None) -> None:
         with self.lock:
             self.status = status
             if fix is not None:
@@ -76,7 +78,7 @@ class GpsReader:
 
     def _run(self) -> None:
         if not shutil.which('mmcli'):
-            self._set('nicht verfügbar (ModemManager/mmcli fehlt)')
+            self._set(Msg('not available (ModemManager/mmcli missing)'))
             return
         modem = None
         enabled = False
@@ -85,19 +87,21 @@ class GpsReader:
                 code, out = self._mmcli('-L')
                 m = re.search(r'/Modem/(\d+)', out)
                 if not m:
-                    self._set('kein Modem gefunden (Flugmodus?)')
+                    self._set(Msg('no modem found (flight mode?)'))
                     time.sleep(30)
                     continue
                 modem = m.group(1)
             if not enabled:
                 code, out = self._mmcli('-m', modem, '--location-enable-gps-nmea', '--location-enable-gps-raw')
                 if code != 0:
-                    self._set('GPS lässt sich nicht einschalten: ' + out.strip().splitlines()[-1][:100] if out.strip() else 'GPS lässt sich nicht einschalten')
+                    detail = out.strip().splitlines()[-1][:100] if out.strip() else ''
+                    self._set(Msg('GPS cannot be enabled: {detail}', detail=detail) if detail
+                              else Msg('GPS cannot be enabled'))
                     modem = None
                     time.sleep(30)
                     continue
                 enabled = True
-                self._set('sucht Satelliten …')
+                self._set(Msg('searching for satellites …'))
             code, out = self._mmcli('-m', modem, '--location-get')
             if code != 0:
                 modem, enabled = None, False
@@ -117,9 +121,9 @@ class GpsReader:
                     fix = {'lat': float(m_lat.group(1)), 'lon': float(m_lon.group(1)),
                            'alt': float(m_alt.group(1)) if m_alt else 0.0, 'sats': None, 't': time.time()}
             if fix:
-                self._set('Position vorhanden', fix)
+                self._set(Msg('position available'), fix)
             else:
                 with self.lock:
                     has_old = self.fix is not None
-                self._set('letzte Position (aktuell kein Fix)' if has_old else 'sucht Satelliten …')
+                self._set(Msg('last position (currently no fix)') if has_old else Msg('searching for satellites …'))
             time.sleep(self.interval)

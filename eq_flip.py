@@ -1,4 +1,3 @@
-#!/home/linux/myvenv/bin/python3
 '''
 Meridian flip for equatorial Sky-Watcher mounts in NexPlane.
 
@@ -29,6 +28,8 @@ from typing import Any, Callable
 import axis_limits
 import pointing_model
 
+from messages import Msg, Text
+
 SIDE_A = 'A'
 SIDE_B = 'B'
 TWO_PI = 2 * math.pi
@@ -44,15 +45,16 @@ def other_side(side: str) -> str:
 # RA axis (any RA position points almost at the same spot), nor reliably the pier side.
 POLE_ALIGN_MIN_DIST = math.radians(10.0)
 
-def pole_problem(dec_true: float) -> str | None:
-    '''Error text if dec_true is too close to a celestial pole for a first alignment, else None.'''
+def pole_problem(dec_true: float) -> Msg | None:
+    '''Error message if dec_true is too close to a celestial pole for a first alignment, else None.'''
     dist = math.pi / 2 - abs(dec_true)
     if dist >= POLE_ALIGN_MIN_DIST:
         return None
-    return (f'Das Ziel steht nur {math.degrees(dist):.1f}° vom Himmelspol entfernt. Dort zeigt das Teleskop in jeder '
-            'Stellung der RA-Achse fast auf denselben Punkt, die Drehung der RA-Achse (und die Seite) lässt sich '
-            'so nicht bestimmen: die Karte und die roten Flächen wären verdreht. Bitte ein Ziel mindestens '
-            f'{math.degrees(POLE_ALIGN_MIN_DIST):.0f}° vom Pol nehmen (Landmarke, Stern, Planet oder Flugzeug).')
+    return Msg('The target is only {dist:.1f}° from the celestial pole. There the telescope points at almost the '
+               'same spot in every position of the RA axis, so the rotation of the RA axis (and the pier side) '
+               'cannot be determined: the map and the red areas would be rotated. Please use a target at least '
+               '{min:.0f}° from the pole (landmark, star, planet or aircraft).',
+               dist=math.degrees(dist), min=math.degrees(POLE_ALIGN_MIN_DIST))
 
 def calibrate(ra_true: float, dec_true: float, ra_raw: float, dec_raw: float,
               home_dec_raw: float | None = None) -> tuple[float, float, str]:
@@ -128,7 +130,7 @@ class Candidate:
 class EqPointing:
     def __init__(self, telescope: Any, ra_cal: float, dec_cal: float,
                  guard: 'axis_limits.AxisLimitGuard | None' = None,
-                 notify: Callable[[str], None] = print,
+                 notify: Callable[[Text], None] = print,
                  auto_flip: bool = True,
                  max_rate_deg_s: float = 5.0,
                  switch_margin_deg: float = 1.0,
@@ -179,7 +181,7 @@ class EqPointing:
         self.last_scope_side = side
         return ra, dec, side
 
-    def check_home(self, home_dec_raw: float) -> str | None:
+    def check_home(self, home_dec_raw: float) -> Msg | None:
         '''
         Plausibility of the alignment: in the home position (tube toward the pole)
         d should be 90 degrees. A large deviation indicates an alignment on side B
@@ -187,9 +189,9 @@ class EqPointing:
         '''
         d = math.degrees(_wrap(home_dec_raw + self.dec_cal, -math.pi))
         if abs(d - 90.0) > 15.0:
-            return (f'Ausrichtung prüfen: Für die Home-Stellung ergibt sich eine Deklination von {d:.0f} Grad statt '
-                    'etwa 90. Wurde das Ausrichtungsobjekt auf der gespiegelten Seite angefahren, oder zeigt '
-                    'die Home-Stellung nicht zum Pol? Bitte auf der normalen Seite ausrichten.')
+            return Msg('Check the alignment: the home position gives a declination of {d:.0f} degrees instead of '
+                       'about 90. Was the alignment object approached on the mirrored side, or does the home '
+                       'position not point at the pole? Please align on the normal side.', d=d)
         return None
 
     # ------------------------------------------------------------------
@@ -387,7 +389,7 @@ class EqPointing:
             self.side = self._initial_side(cands, ra_raw_now, future)
             self.side_since = now - self.min_hold_s
             if self.side != self.last_scope_side:
-                self.notify(f'Ziel liegt günstiger auf Seite {self.side}: Montierung wechselt die Seite.')
+                self.notify(Msg('The target is easier to reach on side {side}: the mount changes sides.', side=self.side))
         current, other = cands[self.side], cands[other_side(self.side)]
         if self.auto_flip and self.guard is not None and not current.feasible:
             # After a switch, stay on the new side for a while to avoid flip-flopping.
@@ -396,7 +398,8 @@ class EqPointing:
             if other_ok and held_long_enough:
                 self.side = other.side
                 self.side_since = now
-                self.notify(f'Meridian-Flip: Wechsel auf Seite {self.side}. Das Ziel ist während der Drehung nicht im Bild.')
+                self.notify(Msg('Meridian flip: changing to side {side}. The target is out of view during the '
+                                'rotation.', side=self.side))
                 return other
         return current
 

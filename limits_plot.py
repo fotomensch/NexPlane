@@ -1,4 +1,3 @@
-#!/home/linux/myvenv/bin/python3
 '''
 Display of the safe area for teach_limits.py:
 - render_ascii(): small map in the terminal
@@ -118,7 +117,7 @@ def render_ascii(home: Point, boundary: list[Point], current: Point, width: int,
     put(cell(rel_c), '@')
 
     lines = [''.join(row) for row in grid]
-    lines.append(f'Achse 1: {x0:+.0f} .. {x1:+.0f} Grad  |  Achse 2: {y0:+.0f} (unten) .. {y1:+.0f} (oben) Grad')
+    lines.append(f'Axis 1: {x0:+.0f} .. {x1:+.0f} degrees  |  axis 2: {y0:+.0f} (bottom) .. {y1:+.0f} (top) degrees')
     return [line[:width] for line in lines]
 
 # ---------------------------------------------------------------------------
@@ -167,9 +166,9 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
             v += step
     out.append(f'<rect x="{L}" y="{T}" width="{W - L - R}" height="{H - T - B}" fill="none" stroke="#999"/>')
     out.append(f'<text x="{(L + W - R) / 2}" y="{H - 15}" text-anchor="middle" fill="#333">'
-               'Achse 1 (RA), Grad relativ zu Home</text>')
+               'Axis 1 (RA), degrees relative to home</text>')
     out.append(f'<text transform="translate(18,{(T + H - B) / 2}) rotate(-90)" text-anchor="middle" fill="#333">'
-               'Achse 2 (Dec), Grad relativ zu Home</text>')
+               'Axis 2 (Dec), degrees relative to home</text>')
 
     n = len(boundary)
     crossings = axis_limits.crossing_edges(boundary) if n >= 4 else []
@@ -212,7 +211,7 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
         cxz = sum(p[0] for p in zone) / len(zone)
         cyz = sum(p[1] for p in zone) / len(zone)
         out.append(f'<text x="{sx(cxz):.1f}" y="{sy(cyz):.1f}" text-anchor="middle" fill="#9b0016" '
-                   f'font-weight="bold">Sperrzone {k}</text>')
+                   f'font-weight="bold">Exclusion zone {k}</text>')
 
     # Points
     for i, p in enumerate(rel_b):
@@ -224,11 +223,11 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
 
     # Title and legend
     out.append(f'<text x="{L}" y="26" font-size="17" font-weight="bold" fill="#111">'
-               f'Sicherer Bereich ({n} Randpunkte, {len(rel_x)} Sperrzone(n), Sicherheitsabstand {deg(margin):.1f} Grad)</text>')
+               f'Safe area ({n} boundary points, {len(rel_x)} exclusion zone(s), safety margin {deg(margin):.1f} degrees)</text>')
     out.append(f'<text x="{L}" y="48" fill="{"#d0021b" if not valid else "#1e7b34"}">{escape(status)}</text>')
-    legend = [('#2b5797', 'Rand'), ('#888', 'Schlusslinie zu Punkt 1'),
-              ('#d0021b', 'Kanten, die sich kreuzen'), ('#cfe8d2', 'erlaubter Bereich'), ('#f4c7c7', 'Sperrzone'),
-              ('#e67e00', 'aktuelle Stellung')]
+    legend = [('#2b5797', 'boundary'), ('#888', 'closing line to point 1'),
+              ('#d0021b', 'crossing edges'), ('#cfe8d2', 'allowed area'), ('#f4c7c7', 'exclusion zone'),
+              ('#e67e00', 'current position')]
     lx = float(L)
     for color, text in legend:
         out.append(f'<rect x="{lx}" y="66" width="14" height="10" fill="{color}"/>')

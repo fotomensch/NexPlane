@@ -31,6 +31,7 @@ import sbs1
 import tracker
 import util
 
+from messages import Msg, Text, of_exception, to_json
 from util import unwrap
 
 # The OpenGL GUI is only needed without --web. If OpenGL/GLUT is missing,
@@ -70,16 +71,16 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
 
     parser.add_argument(
         '--web', action=argparse.BooleanOptionalAction, default=bool(config_data.get('web_gui', False)),
-        help='Browser-Oberflaeche statt OpenGL-Fenster verwenden '
-             '(default aus config.yaml: web_gui, sonst aus).')
+        help='Use the browser GUI instead of the OpenGL window '
+             '(default from config.yaml: web_gui, otherwise off).')
 
     parser.add_argument(
         '--web-port', type=int, default=int(config_data.get('web_port', 8765)),
-        help='Port der Browser-Oberflaeche auf 127.0.0.1 (default: 8765).')
+        help='Port of the browser GUI on 127.0.0.1 (default: 8765).')
 
     parser.add_argument(
         '--no-browser', action='store_true',
-        help='Bei --web den Browser nicht automatisch oeffnen.')
+        help='With --web, do not open a browser automatically.')
 
     parser.add_argument(
         '--sbs1', type=str, action='append', default=[],
@@ -172,8 +173,8 @@ def main() -> None:
         gui_sun_moon = gui_telescope = gui_comm_warning = gui_iface
     else:
         if gui is None:
-            raise SystemExit(f'OpenGL-Oberflaeche nicht verfuegbar ({_gui_import_error}). '
-                             'GLUT installieren oder mit --web starten.')
+            raise SystemExit(f'The OpenGL GUI is not available ({_gui_import_error}). '
+                             'Install GLUT or start with --web.')
         exit_exceptions = (gui.Exit,)
         layers: list[Any] = []
         if args.mount_mode == 'eq':
@@ -207,15 +208,14 @@ def main() -> None:
         try:
             telescope = align.setup_telescope_interface(args, serial_iface)
         except nexstar.CommError as e:
-            msg = ('Die Montierung antwortet nicht (' + (str(e) or 'leere Antwort') + '). Bitte pruefen: '
-                   'Steuerbox eingeschaltet und Stromversorgung ok? USB-Kabel zur Box eingesteckt? '
-                   'telescope_server NACH dem Einschalten der Box (neu) gestartet und auf dem richtigen '
-                   'Anschluss (ls /dev/ttyUSB*)? Keine andere Software (SynScan-App) verbunden? '
-                   'Danach NexPlane neu starten.')
+            msg = Msg('The mount does not answer ({error}). Please check: is the motor controller switched on '
+                      'and powered? Is the USB cable plugged in? Was telescope_server (re)started AFTER switching '
+                      'on the controller, and on the right port (ls /dev/ttyUSB*)? Is no other software (SynScan '
+                      'app) connected? Then restart NexPlane.', error=str(e) or 'empty response')
             if args.web:
                 gui_iface.notify(msg)
                 time.sleep(1.0)   # Give the browser a moment to fetch the message
-            raise SystemExit('\n' + msg)
+            raise SystemExit('\n' + str(msg))
 
         # Enable axis soft limits if configured in config.yaml.
         limit_guard = axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
@@ -262,7 +262,7 @@ def main() -> None:
         # Meridian flip (EQ mode with Sky-Watcher mount only).
         pointing: eq_flip.EqPointing | None = None
         limits_data: dict[str, Any] | None = None
-        notify = gui_iface.notify if args.web else print
+        notify: Any = gui_iface.notify if args.web else print   # takes a Text (Msg or str)
         if args.mount_mode == 'eq' and isinstance(telescope, skywatcher.SkyWatcher):
             pointing = eq_flip.EqPointing(
                 telescope, ra_cal, dec_cal, limit_guard, notify=notify,
@@ -271,7 +271,7 @@ def main() -> None:
             # Sidereal time in NexPlane's coordinate system (for the polar misalignment model)
             pointing.model.set_lst(reach_map.local_sidereal_time(observatory_location))
             if limit_guard is None:
-                notify('Kein sicherer Bereich konfiguriert: automatischer Meridian-Flip ist aus.')
+                notify(Msg('No safe area configured: the automatic meridian flip is off.'))
             else:
                 limits_data = {'home_deg': {1: limit_guard.home[0] * 180 / math.pi,
                                             2: limit_guard.home[1] * 180 / math.pi}}
@@ -297,8 +297,8 @@ def main() -> None:
             manual = eq_flip.ManualControl(telescope, home, home_is_taught,
                                            float(config_data.get('max_slew_degrees_per_second', 5.0)))
             align_targets = [name for name in config_data['locations'] if name != args.location]
-            aligned_text = args.landmark or (f'aus {args.alignment}' if args.alignment else '')
-            gui_iface.enable_manual('eingelernte Home-Stellung' if home_is_taught else 'Stellung beim Start von NexPlane',
+            aligned_text: Text = args.landmark or (Msg('from {file}', file=args.alignment) if args.alignment else '')
+            gui_iface.enable_manual(Msg('taught home position') if home_is_taught else Msg('position at NexPlane start'),
                                     align_targets, bool(args.landmark or args.alignment), aligned_text)
 
         # Safe-zone profiles and grid of reachable sky regions (browser).
@@ -312,7 +312,7 @@ def main() -> None:
         def request_reach() -> None:
             if reach_worker is not None and pointing is not None:
                 raw_ra, raw_dec = telescope.get_ra_dec()
-                gui_iface.set_reach(None, 'wird berechnet …')
+                gui_iface.set_reach_calculating()
                 reach_worker.request(pointing, observatory_location, raw_ra, raw_dec)
 
         if args.landmark or args.alignment:
@@ -326,8 +326,8 @@ def main() -> None:
                 if pointing is not None and pointing.model.active:
                     # For information only: the model applies to this setup and this program run.
                     st = pointing.model.status(obs_lat)
-                    f.write(f'# Polfehler-Modell: {st["points"]} Punkte, Rest {st["rms"]:.2f} Grad, '
-                            f'Polachse {st["polar_high"]:+.2f} Grad hoch, {st["polar_east"]:+.2f} Grad ost\n')
+                    f.write(f'# Pointing model: {st["points"]} points, residual {st["rms"]:.2f} degrees, '
+                            f'polar axis {st["polar_high"]:+.2f} degrees high, {st["polar_east"]:+.2f} degrees east\n')
 
         # Remember the mount's heading in the home position: on the next start NexPlane is then
         # roughly aligned without a landmark (accuracy about that of the north alignment).
@@ -350,7 +350,7 @@ def main() -> None:
                     yaml.dump({'home_stundenwinkel_grad': float(math.degrees(h)),
                                'gespeichert': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
             except OSError as e:
-                notify(f'Home-Richtung konnte nicht gespeichert werden: {e}')
+                notify(Msg('The home direction could not be saved: {error}', error=str(e)))
 
         def rough_align() -> bool:
             '''Rough alignment from the home position (tube pointing at the pole) and the saved home heading.'''
@@ -363,9 +363,9 @@ def main() -> None:
                 return False
             ra_raw_h, dec_raw_h = home_raw_now()
             pointing.set_calibration(pointing.model.lst() - ra_raw_h - h, math.pi / 2 - dec_raw_h)
-            gui_iface.set_aligned('grob aus der Home-Stellung (ohne Landmarke)')
-            notify('Grob ausgerichtet aus der Home-Stellung (Montierung zeigte beim Einschalten zum Pol, grob nach Norden). '
-                   'Erstes Flugzeug verfolgen, mittig korrigieren und ✕ drücken.')
+            gui_iface.set_aligned(Msg('roughly from the home position (no landmark)'), rough=True)
+            notify(Msg('Roughly aligned from the home position (the mount pointed at the pole when switched on, '
+                       'roughly north). Track a first aircraft, centre it and press ✕.'))
             request_reach()
             return True
 
@@ -379,15 +379,15 @@ def main() -> None:
 
         def set_test_alignment(h: float) -> bool:
             if manual is None or not manual.home_is_taught or pointing is None:
-                notify('Testausrichtung braucht eine eingelernte Home-Stellung (sicherer Bereich).')
+                notify(Msg('The test alignment needs a taught home position (safe area).'))
                 return False
             test_align['h'] = util.wrap_rad(h, -math.pi)
             target_tracker.stop()
             manual.stop()
             ra_raw_h, dec_raw_h = home_raw_now()
             pointing.set_calibration(pointing.model.lst() - ra_raw_h - test_align['h'], math.pi / 2 - dec_raw_h)
-            gui_iface.set_aligned(f'TESTMODUS zuhause (grob aus Home, RA-Achse {math.degrees(test_align["h"]):.0f}°)',
-                                  test=True)
+            gui_iface.set_aligned(Msg('TEST MODE at home (rough from home, RA axis {h:.0f}°)',
+                                      h=math.degrees(test_align['h'])), test=True)
             request_reach()
             return True
 
@@ -404,8 +404,8 @@ def main() -> None:
                 track_log = pad_control.TrackLog(os.path.join(config.main_config_dir(), 'protokolle'))
         if manual is not None and not (args.landmark or args.alignment):
             if not rough_align():
-                notify('Nicht ausgerichtet. Mit Landmarke ausrichten, oder ohne Landmarke: Flugzeug als Peilziel wählen '
-                       '(Liste oder Gamepad R1), mit dem Stick mittig ins Bild fahren, ✕ drücken.')
+                notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft as aiming '
+                           'target (list or gamepad R1), move it to the image centre with the stick, press ✕.'))
         recent_planes: list[str] = []
         plane_history: list[str] = []
         last_loop_t = time.monotonic()
@@ -439,16 +439,17 @@ def main() -> None:
         if args.web:
             gui_iface.set_focal_options(focal_steps, float(config_data.get('brennweite_mm', focal_steps[0])))
 
-        def model_text() -> str:
+        def model_text() -> Text:
             assert pointing is not None
             st = pointing.model.status(obs_lat)
             if not st['active']:
                 return ''
-            txt = f'Polfehler-Modell aktiv, Rest {st["rms"]:.2f}°.'
+            txt = Msg('Polar error model active, residual {rms:.2f}°.', rms=st['rms'])
             if st['polar_high'] is not None:
                 h, e = st['polar_high'], st['polar_east']
-                txt += (f' Polachse: {abs(h):.1f}° zu {"hoch" if h > 0 else "tief"}, '
-                        f'{abs(e):.1f}° zu weit {"östlich" if e > 0 else "westlich"}.')
+                txt += Msg('Polar axis: {h:.1f}° too {updown}, {e:.1f}° too far {eastwest}.',
+                           h=abs(h), updown=Msg('high') if h > 0 else Msg('low'),
+                           e=abs(e), eastwest=Msg('east') if e > 0 else Msg('west'))
             return txt
 
         def save_correction(hex_id: str | None) -> bool:
@@ -463,11 +464,12 @@ def main() -> None:
             corr = (pointing.corr_ra, pointing.corr_dec)
             callsign, p_az, p_el = plane_info(hex_id)
             res: dict[str, Any] = {}
+            msg: Msg
             first = not gui_iface.is_aligned() or not pointing.model.points
             if first and (p_az is None or p_el is None):
                 if not gui_iface.is_aligned():
-                    notify('Noch nicht ausgerichtet: Erst ein Flugzeug als Peilziel wählen (Liste oder R1), '
-                           'mit dem Stick mittig ins Bild fahren, dann ✕.')
+                    notify(Msg('Not aligned yet: first choose an aircraft as aiming target (list or R1), move it '
+                               'to the image centre with the stick, then ✕.'))
                     return False
             if first and p_az is not None and p_el is not None:
                 # First point of this setup (no landmark or after rough alignment): do a full alignment
@@ -480,40 +482,40 @@ def main() -> None:
                 pointing.set_calibration(new_ra_cal, new_dec_cal)
                 pointing.start_session(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '',
                                        gui_iface.get_focal(), sensor_mm)
-                gui_iface.set_aligned(f'Flugzeug {callsign or hex_id} (Seite {side})')
+                gui_iface.set_aligned(Msg('aircraft {name} (side {side})', name=callsign or hex_id, side=side))
                 store_home_ha()
-                msg = (f'Ausgerichtet auf {callsign or hex_id} (Punkt 1, Seite {side}). NexPlane verfolgt jetzt selbst. '
-                       'Weitere Flugzeuge in anderen Himmelsrichtungen mittig korrigieren und ✕ drücken; '
-                       'ab 3 Punkten wird die Polfehlstellung mitgerechnet.')
+                msg = Msg('Aligned on {name} (point 1, side {side}). NexPlane now tracks by itself. Centre further '
+                          'aircraft in other directions and press ✕; from 3 points on, the polar misalignment is '
+                          'included.', name=callsign or hex_id, side=side)
             elif p_az is not None and p_el is not None:
                 ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
                 res = pointing.sync(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '', gui_iface.get_focal(), sensor_mm)
                 new_ra_cal, new_dec_cal = pointing.ra_cal, pointing.dec_cal
                 n = len(pointing.model.points)
-                msg = f'Punkt {n} übernommen ({callsign or hex_id}). '
+                msg = Msg('Point {n} accepted ({name}).', n=n, name=callsign or hex_id)
                 if res.get('full'):
                     msg += model_text()
                 else:
                     need = max(0, pointing.model.MIN_POINTS - n)
-                    msg += 'Nullpunkt angepasst.'
+                    msg += Msg('Zero point adjusted.')
                     if need:
-                        msg += (f' Noch {need} Punkt{"e" if need > 1 else ""} in deutlich anderer Himmelsrichtung, '
-                                'dann wird die Polfehlstellung mitgerechnet.')
+                        msg += Msg('{need} more point(s) in a clearly different direction, then the polar '
+                                   'misalignment is included.', need=need)
                     elif res.get('hint'):
-                        msg += ' ' + res['hint']
+                        msg += res['hint']
                     if pointing.model.active:
-                        msg += ' (Polfehler-Modell von vorher bleibt aktiv.)'
+                        msg += Msg('(The previous polar error model stays active.)')
                 if res.get('warn'):
-                    msg += ' ACHTUNG: ' + res['warn']
+                    msg += Msg('WARNING: {warning}', warning=res['warn'])
                 store_home_ha()
             else:
                 new_ra_cal, new_dec_cal = pointing.absorb_correction()
-                msg = ('Korrektur als Verschiebung übernommen (kein Flugzeug verfolgt, daher kein Ausrichtpunkt '
-                       f'für das Modell; RA-Achse {math.degrees(corr[0]):+.2f}°, Dec-Achse {math.degrees(corr[1]):+.2f}°).')
+                msg = Msg('Correction accepted as an offset (no aircraft tracked, so no sync point for the model; '
+                          'RA axis {ra:+.2f}°, Dec axis {dec:+.2f}°).', ra=math.degrees(corr[0]), dec=math.degrees(corr[1]))
             try:
                 write_alignment(new_ra_cal, new_dec_cal)
             except OSError as e:
-                notify(f'Ausrichtung konnte nicht gespeichert werden: {e}')
+                notify(Msg('The alignment could not be saved: {error}', error=str(e)))
             if track_log is not None:
                 st = pointing.model.status(obs_lat)
                 try:
@@ -542,16 +544,18 @@ def main() -> None:
             name = str(pointing.model.points[idx].get('name', '')) if 0 <= idx < n else ''
             res = pointing.remove_point(idx)
             if res is None:
-                notify('Kein Ausrichtpunkt zum Löschen (mindestens ein Punkt bleibt).')
+                notify(Msg('No sync point to delete (at least one point remains).'))
                 return False
             write_alignment(pointing.ra_cal, pointing.dec_cal)
-            notify(f'Ausrichtpunkt {idx + 1}{" (" + name + ")" if name else ""} gelöscht, {len(pointing.model.points)} Punkt(e) übrig. '
-                   + (model_text() or 'Nur Nullpunkt-Ausrichtung.'))
+            notify(Msg('Sync point {n}{name} deleted, {left} point(s) left.', n=idx + 1,
+                       name=f' ({name})' if name else '', left=len(pointing.model.points))
+                   + (model_text() or Msg('Zero point alignment only.')))
             request_reach()
             return True
 
-        def compass(az: float) -> str:
-            names = ['Nord', 'Nordost', 'Ost', 'Südost', 'Süd', 'Südwest', 'West', 'Nordwest']
+        def compass(az: float) -> Msg:
+            names = [Msg('north'), Msg('north-east'), Msg('east'), Msg('south-east'),
+                     Msg('south'), Msg('south-west'), Msg('west'), Msg('north-west')]
             return names[int(((math.degrees(az) % 360) + 22.5) // 45) % 8]
 
         def plane_usable(hex_id: str) -> bool:
@@ -578,11 +582,12 @@ def main() -> None:
                     if h in planes and h != current:
                         new = h
             if new is None:
-                notify('Gamepad: kein ' + ('weiteres erreichbares' if direction == 'next' else 'vorheriges') + ' Flugzeug.')
+                notify(Msg('Gamepad: no further reachable aircraft.') if direction == 'next'
+                       else Msg('Gamepad: no previous aircraft.'))
                 return False
             res = gui_iface.command('track', {'hex': new})
             if not res.get('ok'):
-                notify(f'Gamepad: {res.get("error")}')
+                notify(Msg('Gamepad: {error}', error=res.get('error')))
                 return False
             if direction == 'next' and current is not None:
                 plane_history.append(current)
@@ -591,11 +596,18 @@ def main() -> None:
             del recent_planes[:-6]
             callsign, p_az, p_el = plane_info(new)
             if not gui_iface.is_aligned():
-                notify(f'Gamepad: Peilziel {callsign or new}' +
-                       (f' – Richtung {compass(p_az)}, {math.degrees(p_el):.0f}° hoch' if p_az is not None and p_el is not None else '') +
-                       '. Von Hand mittig ins Bild fahren, dann ✕.')
+                if p_az is not None and p_el is not None:
+                    notify(Msg('Gamepad: aiming target {name} – direction {dir}, {el:.0f}° high. Move it to the '
+                               'image centre by hand, then ✕.', name=callsign or new, dir=compass(p_az),
+                               el=math.degrees(p_el)))
+                else:
+                    notify(Msg('Gamepad: aiming target {name}. Move it to the image centre by hand, then ✕.',
+                               name=callsign or new))
                 return True
-            notify(f'Gamepad: verfolge {callsign or new}' + (f' ({math.degrees(p_el):.0f}° hoch).' if p_el is not None else '.'))
+            if p_el is not None:
+                notify(Msg('Gamepad: tracking {name} ({el:.0f}° high).', name=callsign or new, el=math.degrees(p_el)))
+            else:
+                notify(Msg('Gamepad: tracking {name}.', name=callsign or new))
             return True
 
         # Main loop
@@ -650,7 +662,7 @@ def main() -> None:
 
                 new_location = gui_iface.pop_location_request() if args.web else None
                 if new_location is not None:
-                    notify(f'Standortwechsel auf {new_location}: Montierung wird gestoppt, NexPlane startet neu.')
+                    notify(Msg('Changing location to {name}: the mount is stopped and NexPlane restarts.', name=new_location))
                     target_tracker.stop()
                     if manual is not None:
                         manual.stop()
@@ -663,21 +675,22 @@ def main() -> None:
                         if manual is not None:
                             manual.stop()
                         warning = limit_guard.set_bypass(want_off)
-                        notify('ACHTUNG: Sicherer Bereich ABGESCHALTET (eigene Gefahr). Hand am Netzschalter!'
-                               if want_off else 'Sicherer Bereich wieder aktiv.')
+                        notify(Msg('WARNING: Safe area DISABLED (at your own risk). Keep a hand on the power switch!')
+                               if want_off else Msg('Safe area active again.'))
                         if warning:
                             notify(warning)
 
                 for oreq in (gui_iface.pop_orte_requests() if args.web else []):
                     if oreq['cmd'] == 'ort_save':
                         base = {k: v for k, v in config_data['locations'].items() if k not in own_orte}
-                        err = orte.save(oreq['name'], oreq['typ'], oreq['lat'], oreq['lon'], oreq['alt'], base)
+                        err: Msg | None = orte.save(oreq['name'], oreq['typ'], oreq['lat'], oreq['lon'], oreq['alt'], base)
                     else:
                         err = orte.delete(oreq['name'])
                         if err is None and oreq['name'] == args.location:
-                            err = 'Der aktive Standort kann nicht gelöscht werden.'
+                            err = Msg('The active location cannot be deleted.')
                     if err:
-                        notify(f'Ort nicht gespeichert: {err}' if oreq['cmd'] == 'ort_save' else f'Nicht gelöscht: {err}')
+                        notify(Msg('Place not saved: {error}', error=err) if oreq['cmd'] == 'ort_save'
+                               else Msg('Not deleted: {error}', error=err))
                         continue
                     base = {k: v for k, v in config_data['locations'].items() if k not in own_orte}
                     own = orte.load()
@@ -688,12 +701,14 @@ def main() -> None:
                     if manual is not None:
                         gui_iface.set_align_targets([n for n in config_data['locations'] if n != args.location])
                     if oreq['cmd'] == 'ort_save':
-                        typ_txt = 'Landmarke' if oreq['typ'] == 'landmarke' else 'Standort'
-                        notify(f'{typ_txt} „{oreq["name"]}“ gespeichert ({oreq["lat"]:.5f}, {oreq["lon"]:.5f}, {oreq["alt"]:.0f} m).')
+                        saved = (Msg('Landmark “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **oreq)
+                                 if oreq['typ'] == 'landmarke' else
+                                 Msg('Location “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **oreq))
+                        notify(saved)
                         if oreq.get('activate') and oreq['typ'] == 'standort' and oreq['name'] != args.location:
                             gui_iface.command('set_location', {'name': oreq['name']})
                     else:
-                        notify(f'„{oreq["name"]}“ gelöscht.')
+                        notify(Msg('“{name}” deleted.', name=oreq['name']))
 
                 # Refining the safe area: crosshair position, preview and new boundary vertices
                 if args.web and limit_guard is not None:
@@ -708,23 +723,23 @@ def main() -> None:
                         try:
                             if act == 'add':
                                 what = limit_guard.refine_add(p_ax)
-                                notify(f'Grenzpunkt übernommen ({what}). Noch nicht gespeichert.')
+                                notify(Msg('Limit point accepted ({what}). Not saved yet.', what=what))
                                 if pad is not None:
                                     pad.rumble(0.7, 0.7, 250)
                             elif act == 'undo':
-                                notify('Letzten Grenzpunkt zurückgenommen.' if limit_guard.refine_undo()
-                                       else 'Kein Grenzpunkt zum Zurücknehmen.')
+                                notify(Msg('Last limit point undone.') if limit_guard.refine_undo()
+                                       else Msg('No limit point to undo.'))
                             elif act == 'save':
                                 path = limit_guard.refine_save()
-                                notify(f'Sicherer Bereich gespeichert in {os.path.basename(path)} '
-                                       f'(vorherige Fassung: {os.path.basename(path)}.bak).')
+                                notify(Msg('Safe area saved in {file} (previous version: {file}.bak).',
+                                           file=os.path.basename(path)))
                             elif act == 'discard':
                                 limit_guard.refine_discard()
-                                notify('Ungespeicherte Grenzpunkte verworfen, Datei neu geladen.')
+                                notify(Msg('Unsaved limit points discarded, file reloaded.'))
                             if act != 'save' and gui_iface.is_aligned():
                                 request_reach()
                         except (axis_limits.LimitError, OSError) as e:
-                            notify(f'Grenzen verfeinern: {e}')
+                            notify(Msg('Refine limits: {error}', error=of_exception(e)))
                             if pad is not None and act == 'add':
                                 pad.rumble(1.0, 1.0, 90, 3)
                     if gui_iface.refine_is_active() and axis_pos[0] is not None and axis_pos[1] is not None \
@@ -742,7 +757,7 @@ def main() -> None:
                             'pos': rel(p_ax),
                             'clearance': round(math.degrees(limit_guard.clearance_at(p_ax)), 2),
                             'margin': round(math.degrees(limit_guard.margin), 2),
-                            'preview': {'kind': prev['kind'], 'msg': prev['msg'], 'hole': prev.get('hole'),
+                            'preview': {'kind': prev['kind'], 'msg': prev['msg'].to_json(), 'hole': prev.get('hole'),
                                         'poly': [rel(q) for q in prev['poly']] if prev.get('poly') else None},
                             'unsaved': len(limit_guard.refine_undo_stack),
                             'file': os.path.basename(limit_guard.file or ''),
@@ -761,14 +776,14 @@ def main() -> None:
                                                limit_guard.profile)
                         if pointing is not None:
                             pointing.reset()
-                        notify(f'Profil {new_profile} aktiv: {len(limit_guard.poly)} Randpunkte, '
-                               f'{len(limit_guard.holes)} Sperrzone(n).')
+                        notify(Msg('Profile {name} active: {points} outline points, {zones} exclusion zone(s).',
+                                   name=new_profile, points=len(limit_guard.poly), zones=len(limit_guard.holes)))
                         if warning:
                             notify(warning)
                         if gui_iface.is_aligned():
                             request_reach()
                     except axis_limits.LimitError as e:
-                        notify(f'Profilwechsel nicht möglich: {e}')
+                        notify(Msg('Changing the profile is not possible: {error}', error=of_exception(e)))
 
                 # Correction (browser buttons) and gamepad
                 now_m = time.monotonic()
@@ -781,39 +796,39 @@ def main() -> None:
                             pointing.add_correction(*img2ax(math.radians(a), math.radians(b)))
                         elif kind == 'reset':
                             pointing.reset_correction()
-                            notify('Korrektur auf 0 gesetzt.')
+                            notify(Msg('Correction set to 0.'))
                         elif kind == 'save':
                             save_correction(tracked_plane_hex_id)
                         elif kind == 'test_set':
                             if set_test_alignment(math.pi / 2):
-                                notify('TESTMODUS: grob ausgerichtet aus der Home-Stellung, nur für Tests zuhause, wird nicht '
-                                       'gespeichert. Prüfen: aus der Home-Stellung nur die Dec-Achse fahren, der Tubus schwenkt '
-                                       'vom Pol nach Westen oder Osten. Die Anzeige muss dieselbe Seite zeigen (Westen: Az zwischen 180° '
-                                       'und 360°, Osten: Az zwischen 0° und 180°). Zeigt sie die andere Seite, „Um 180° drehen“ '
-                                       'drücken.')
+                                notify(Msg('TEST MODE: roughly aligned from the home position, only for tests at home, '
+                                           'not saved. Check: from the home position move only the Dec axis; the tube '
+                                           'swings from the pole toward west or east. The display must show the same side '
+                                           '(west: Az between 180° and 360°, east: Az between 0° and 180°). If it shows '
+                                           'the other side, press “Turn by 180°”.'))
                         elif kind == 'test_flip':
                             if set_test_alignment(test_align['h'] + math.pi):
-                                notify(f'TESTMODUS: um 180° gedreht (RA-Achse jetzt {math.degrees(test_align["h"]):.0f}°).')
+                                notify(Msg('TEST MODE: turned by 180° (RA axis now {h:.0f}°).', h=math.degrees(test_align['h'])))
                         elif kind == 'test_end':
                             target_tracker.stop()
                             if manual is not None:
                                 manual.stop()
                             pointing.set_calibration(0.0, 0.0)
                             gui_iface.set_unaligned()
-                            notify('TESTMODUS beendet. Nicht ausgerichtet.')
+                            notify(Msg('TEST MODE ended. Not aligned.'))
                         elif kind == 'forget':
                             target_tracker.stop()
                             if manual is not None:
                                 manual.stop()
                             pointing.set_calibration(0.0, 0.0)
                             gui_iface.set_unaligned()
-                            txt = 'Ausrichtung vergessen (Punkte, Modell und Korrektur gelöscht). Nicht ausgerichtet.'
+                            txt = Msg('Alignment forgotten (points, model and correction deleted). Not aligned.')
                             if a > 0 and os.path.exists(home_ha_file):
                                 try:
                                     os.remove(home_ha_file)
-                                    txt += ' Gespeicherte Home-Richtung gelöscht.'
+                                    txt += Msg('Stored home direction deleted.')
                                 except OSError as e:
-                                    txt += f' Home-Richtung konnte nicht gelöscht werden: {e}'
+                                    txt += Msg('The home direction could not be deleted: {error}', error=str(e))
                             notify(txt)
                         elif kind == 'pop':
                             remove_last_point(int(a) if a >= 0 else None)
@@ -830,11 +845,11 @@ def main() -> None:
                             tracked_plane_hex_id = None
                             fixed_target = None
                             tracking_now = False
-                            notify('STOPP (Gamepad).')
+                            notify(Msg('STOP (gamepad).'))
                             pad.rumble(0.9, 0.9, 400)
                         elif press == 'kreis':
                             pointing.reset_correction()
-                            notify('Korrektur auf 0 gesetzt (Gamepad).')
+                            notify(Msg('Correction set to 0 (gamepad).'))
                             pad.rumble(0.5, 0.5, 90, 2)
                         elif press == 'kreuz':
                             if save_correction(tracked_plane_hex_id):
@@ -845,7 +860,7 @@ def main() -> None:
                             cur = gui_iface.get_focal()
                             nxt = next((f for f in focal_steps if f > cur + 1), focal_steps[0])
                             gui_iface.command('set_focal', {'mm': nxt})
-                            notify(f'Brennweite für Ausrichtpunkte: {nxt:.0f} mm (Gamepad).')
+                            notify(Msg('Focal length for sync points: {mm:.0f} mm (gamepad).', mm=nxt))
                             pad.rumble(0.4, 0.4, 100, focal_steps.index(nxt) + 1)
                         elif press == 'share' and gui_iface.refine_is_active():
                             gui_iface.queue_refine('add')
@@ -871,7 +886,7 @@ def main() -> None:
                     elif stick and manual is not None:
                         if gui_iface.home_active():
                             gui_iface.home_done()
-                            notify('Home-Fahrt abgebrochen (Gamepad).')
+                            notify(Msg('Go-home cancelled (gamepad).'))
                         map_rates = None
                         if gui_iface.refine_is_active() and gui_iface.is_aligned() and pointing is not None \
                                 and pointing.last_raw is not None:
@@ -897,7 +912,7 @@ def main() -> None:
                     gui_iface.set_corr_info(
                         {'ra': math.degrees(pointing.corr_ra), 'dec': math.degrees(pointing.corr_dec),
                          'model': pointing.model.status(obs_lat)},
-                        None if pad is None else {'connected': pad.connected, 'name': pad.name, 'error': pad.error})
+                        None if pad is None else {'connected': pad.connected, 'name': pad.name, 'error': to_json(pad.error)})
 
                 align_request = gui_iface.pop_align_request() if manual is not None else None
                 jog = gui_iface.get_jog() if manual is not None else None
@@ -927,13 +942,15 @@ def main() -> None:
                         write_alignment(new_ra_cal, new_dec_cal)
                         store_home_ha()
                         align_name = align_request[4:] if align_request.startswith('sky:') else align_request
-                        gui_iface.set_aligned(f'{align_name} (Seite {align_side})')
+                        gui_iface.set_aligned(Msg('{name} (side {side})', name=align_name, side=align_side))
                         request_reach()
-                        notify(f'Ausgerichtet auf {align_name}, Seite {align_side}. Gespeichert in {alignment_file}.' +
-                               ('' if home_dec_raw is not None else
-                                ' Ohne sicheren Bereich ist die Seite nicht prüfbar, Seite A angenommen.'))
+                        done = Msg('Aligned on {name}, side {side}. Saved in {file}.',
+                                   name=align_name, side=align_side, file=alignment_file)
+                        if home_dec_raw is None:
+                            done += Msg('Without a safe area the side cannot be checked, side A assumed.')
+                        notify(done)
                     except Exception as e:
-                        notify(f'Ausrichtung fehlgeschlagen: {e}')
+                        notify(Msg('Alignment failed: {error}', error=of_exception(e)))
                 elif manual is not None and jog is not None:
                     # Manual control (also allowed near the Sun, so the user can drive back out).
                     target_tracker.stop()
@@ -951,7 +968,7 @@ def main() -> None:
                     target_tracker.stop()
                     if manual.home_step():
                         gui_iface.home_done()
-                        notify('Home-Stellung erreicht.')
+                        notify(Msg('Home position reached.'))
                 elif fixed_target is not None and pointing is not None:
                     # Fixed point (pier-side flip test from the browser GUI).
                     fixed_ra, fixed_dec = util.altaz_to_radec(
@@ -960,15 +977,15 @@ def main() -> None:
                     if fixed_target['side'] is None:
                         new_side = eq_flip.other_side(pointing.last_scope_side)
                         if pointing.reachable(fixed_ra, fixed_dec, new_side) is False:
-                            notify(f'Seitenwechsel-Test nicht möglich: Diese Blickrichtung liegt auf Seite {new_side} '
-                                   'außerhalb des sicheren Bereichs. Teleskop auf eine andere Stelle richten, '
-                                   'z. B. weiter Richtung Osten oder Westen, und erneut versuchen.')
+                            notify(Msg('Side change test not possible: this direction lies outside the safe area on '
+                                       'side {side}. Point the telescope elsewhere, e.g. further east or west, and try '
+                                       'again.', side=new_side))
                             target_tracker.stop()
                             gui_airplanes.stop_tracking()
                             continue
                         fixed_target['side'] = new_side
                         gui_airplanes.set_fixed_side(new_side)
-                        notify(f'Seitenwechsel-Test: Punkt wird auf Seite {new_side} angefahren.')
+                        notify(Msg('Side change test: the point is approached on side {side}.', side=new_side))
                     pointing.command(target_tracker, fixed_ra, fixed_dec, forced_side=fixed_target['side'])
                 elif tracked_plane_hex_id is None:
                     # There is no airplane to track, so stop the tracker.
@@ -1079,7 +1096,7 @@ def main() -> None:
 
     if restart_location is not None:
         argv = restart_argv(restart_location)
-        print('Neustart:', ' '.join(argv))
+        print('Restarting:', ' '.join(argv))
         sys.stdout.flush()
         os.execv(argv[0], argv)
 

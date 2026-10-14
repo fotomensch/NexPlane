@@ -1,4 +1,3 @@
-#!/home/linux/myvenv/bin/python3
 '''
 Sky reachability: for a grid of azimuth and elevation it is determined
 whether the mount reaches the point within the safe area, and on
@@ -22,6 +21,8 @@ import time
 from typing import Any, Callable
 
 import util
+
+from messages import Msg, Text
 
 AZ_STEP_DEG = 3.0
 EL_STEP_DEG = 3.0
@@ -73,7 +74,7 @@ def compute(pointing: Any, observatory: Any, ra_raw_now: float, dec_raw_now: flo
 
 class ReachWorker:
     '''Computes the grid in the background so the main loop does not stall.'''
-    def __init__(self, deliver: Callable[[dict[str, Any] | None, str], None]):
+    def __init__(self, deliver: Callable[[dict[str, Any] | None, Text], None]):
         self.deliver = deliver
         self.thread: threading.Thread | None = None
         self.pending: tuple[Any, ...] | None = None
@@ -98,4 +99,4 @@ class ReachWorker:
                 grid['seconds'] = round(time.time() - t0, 1)
                 self.deliver(grid, '')
             except Exception as e:
-                self.deliver(None, f'Berechnung der blinden Bereiche fehlgeschlagen: {e}')
+                self.deliver(None, Msg('Calculating the blind areas failed: {error}', error=str(e)))

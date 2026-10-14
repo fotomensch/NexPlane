@@ -1,4 +1,3 @@
-#!/home/linux/myvenv/bin/python3
 '''
 Safe area (soft limits) for Sky-Watcher mounts in NexPlane.
 
@@ -28,6 +27,8 @@ from typing import Any, Callable
 
 import config
 import skywatcher
+
+from messages import Msg, Text, join
 
 DEFAULTS: dict[str, Any] = {
     'file': None,
@@ -67,14 +68,15 @@ def get_settings(config_data: dict[str, Any]) -> dict[str, Any] | None:
     # (long tube / camera only). Without profiles, file is the only profile.
     profiles = settings.get('profiles') or {}
     if not isinstance(profiles, dict):
-        raise LimitError('axis_limits.profiles muss eine Zuordnung Name -> Datei sein.')
+        raise LimitError(Msg('axis_limits.profiles must map profile names to file names.'))
     if not profiles and settings.get('file'):
         profiles = {'standard': settings['file']}
     settings['profiles'] = dict(profiles)
     if profiles:
         active = settings.get('profile') or next(iter(profiles))
         if active not in profiles:
-            raise LimitError(f'axis_limits.profile "{active}" gibt es nicht. Vorhanden: {", ".join(profiles)}')
+            raise LimitError(Msg('axis_limits.profile "{name}" does not exist. Available: {names}',
+                                 name=active, names=', '.join(profiles)))
         settings['profile'] = active
         settings['file'] = profiles[active]
     return settings
@@ -137,18 +139,19 @@ def crossing_edges(poly: list[Point]) -> list[tuple[int, int]]:
                 pairs.append((i, j))
     return pairs
 
-def polygon_problems(poly: list[Point]) -> list[str]:
+def polygon_problems(poly: list[Point]) -> list[Msg]:
     '''Returns a list of problems (empty = OK).'''
     problems = []
     n = len(poly)
     if n < 3:
-        return ['Mindestens drei Randpunkte noetig.']
+        return [Msg('At least three boundary points are needed.')]
     area2 = sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1] for i in range(n))
     if abs(area2) < 1e-9:
-        problems.append('Der Umriss hat keine Flaeche (alle Punkte auf einer Linie?).')
+        problems.append(Msg('The outline has no area (all points on one line?).'))
     for i, j in crossing_edges(poly):
-        problems.append(f'Rand ueberkreuzt sich (Kante {i + 1}-{i + 2} mit Kante {j + 1}-{(j + 1) % n + 1}). '
-                        'Punkte bitte der Reihe nach entlang des Randes merken.')
+        problems.append(Msg('The boundary crosses itself (edge {a1}-{a2} with edge {b1}-{b2}). '
+                            'Please mark the points in order along the boundary.',
+                            a1=i + 1, a2=i + 2, b1=j + 1, b2=(j + 1) % n + 1))
     return problems
 
 def clearance(p: Point, poly: list[Point], margin: float,
@@ -167,14 +170,14 @@ def clearance(p: Point, poly: list[Point], margin: float,
             c = ch
     return c
 
-def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], home: Point) -> list[str]:
+def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], home: Point) -> list[Msg]:
     '''Check of the keep-out zones (empty = OK).'''
     problems = []
     for k, zone in enumerate(exclusions, start=1):
         for prob in polygon_problems(zone):
-            problems.append(f'Sperrzone {k}: {prob}')
+            problems.append(Msg('Exclusion zone {k}: {problem}', k=k, problem=prob))
         if len(zone) >= 3 and point_in_polygon(home, zone):
-            problems.append(f'Sperrzone {k} enthaelt die Home-Position.')
+            problems.append(Msg('Exclusion zone {k} contains the home position.', k=k))
     return problems
 
 def signed_area(poly: list[Point]) -> float:
@@ -222,12 +225,12 @@ def save_limits(path: str,
     exclusions_rad = [z for z in (exclusions_rad or []) if z]
     problems = polygon_problems(boundary_rad)
     if problems:
-        raise LimitError(' '.join(problems))
+        raise LimitError(join(problems))
     if not point_in_polygon((home_rad[1], home_rad[2]), boundary_rad):
-        raise LimitError('Die Home-Position liegt ausserhalb des Umrisses.')
+        raise LimitError(Msg('The home position lies outside the outline.'))
     problems = exclusion_problems(boundary_rad, exclusions_rad, (home_rad[1], home_rad[2]))
     if problems:
-        raise LimitError(' '.join(problems))
+        raise LimitError(join(problems))
     data: dict[str, Any] = {
         'version': 2,
         'created': datetime.datetime.now().isoformat(timespec='seconds'),
@@ -247,13 +250,13 @@ def load_limits(path: str) -> dict[str, Any]:
         with open(path) as f:
             data = yaml.safe_load(f)
     except FileNotFoundError:
-        raise LimitError(f'Grenzen-Datei nicht gefunden: {path} (erst mit teach_limits.py einlernen)')
+        raise LimitError(Msg('Limits file not found: {path} (teach it with teach_limits.py first)', path=path))
     if not isinstance(data, dict) or 'polygon_deg' not in data:
-        raise LimitError(f'Grenzen-Datei {path} hat das alte oder ein unbekanntes Format. '
-                         'Bitte mit teach_limits.py neu einlernen.')
+        raise LimitError(Msg('Limits file {path} has an old or unknown format. '
+                             'Please teach it again with teach_limits.py.', path=path))
     for key in ['cpr', 'home_deg', 'polygon_deg']:
         if key not in data:
-            raise LimitError(f'Grenzen-Datei {path} unvollstaendig: {key} fehlt')
+            raise LimitError(Msg('Limits file {path} is incomplete: {key} is missing', path=path, key=key))
     return dict(data)
 
 # ---------------------------------------------------------------------------
@@ -290,7 +293,7 @@ class AxisLimitGuard:
 
         self.lookahead = float(settings['lookahead_seconds'])
         if self.lookahead <= 0:
-            raise LimitError('lookahead_seconds muss > 0 sein.')
+            raise LimitError(Msg('lookahead_seconds must be > 0.'))
         self.trip_dist = rad(float(settings['wrong_way_trip_degrees']))
 
         self.last_pos: dict[int, float | None] = {1: None, 2: None}
@@ -303,7 +306,7 @@ class AxisLimitGuard:
         # The direction check (emergency stop on wrong direction of rotation) stays active.
         self.bypass = False
         # Messages during operation (e.g. can be redirected to a terminal UI).
-        self.notify: Callable[[str], None] = print
+        self.notify: Callable[[Text], None] = print
         # Measured time between two motion commands per axis (initial value deliberately pessimistic).
         self.cycle: dict[int, float] = {1: 0.5, 2: 0.5}
         self.last_slew_time: dict[int, float | None] = {1: None, 2: None}
@@ -315,9 +318,9 @@ class AxisLimitGuard:
         mount._slew_axis = self._slew_axis  # type: ignore[method-assign]
 
         if int(limits['cpr'][1]) != mount.cpr[1] or int(limits['cpr'][2]) != mount.cpr[2]:
-            raise LimitError('Schritte pro Umdrehung passen nicht zur Grenzen-Datei '
-                             '(andere Steuerbox/Firmware oder Simulator?). Bitte neu einlernen '
-                             'bzw. fuer Simulator-Tests axis_limits auskommentieren.')
+            raise LimitError(Msg('The steps per revolution do not match the limits file (different motor '
+                                 'controller, firmware or simulator?). Please teach the limits again, or '
+                                 'comment out axis_limits for simulator tests.'))
 
         p1 = self._inquire_position(1)
         p2 = self._inquire_position(2)
@@ -326,21 +329,21 @@ class AxisLimitGuard:
             d1 = abs(p1 - rad(limits['home_deg'][1]))
             d2 = abs(p2 - rad(limits['home_deg'][2]))
             if d1 > tol or d2 > tol:
-                raise LimitError(
-                    'Montierung steht nicht in der eingelernten Home-Position '
-                    f'(Abweichung Achse1 {deg(d1):.2f} Grad, Achse2 {deg(d2):.2f} Grad). '
-                    'Montierung in Home-Stellung bringen, aus- und wieder einschalten, dann neu starten.')
+                raise LimitError(Msg(
+                    'The mount is not at the taught home position (off by {d1:.2f} degrees on axis 1, '
+                    '{d2:.2f} degrees on axis 2). Move the mount to the home position, switch it off and on '
+                    'again, then restart.', d1=deg(d1), d2=deg(d2)))
         c = self.clearance_at((p1, p2))
         if c < 0:
             # No abort: only moves back into the permitted area are possible then.
-            print('WARNUNG: Die Montierung steht beim Start ausserhalb des erlaubten Bereichs '
-                  f'(inkl. Sicherheitsabstand, um {deg(-c):.2f} Grad). Nur Fahrten zurueck nach innen sind moeglich.')
+            print(f'WARNING: The mount starts outside the allowed area (including the safety margin, by '
+                  f'{deg(-c):.2f} degrees). Only moves back inside are possible.')
 
         home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
-        print(f'Sicherer Bereich aktiv (Profil {self.profile}): Umriss mit {len(self.poly)} Punkten, '
-              f'{len(self.holes)} Sperrzone(n), Sicherheitsabstand {settings["margin_degrees"]} Grad.')
-        print(f'  Aktuelle Stellung relativ zu Home: Achse 1 {deg(p1 - home[0]):+.2f}, '
-              f'Achse 2 {deg(p2 - home[1]):+.2f} Grad, Abstand zum Rand {deg(c):.2f} Grad.')
+        print(f'Safe area active (profile {self.profile}): outline with {len(self.poly)} points, '
+              f'{len(self.holes)} exclusion zone(s), safety margin {settings["margin_degrees"]} degrees.')
+        print(f'  Current position relative to home: axis 1 {deg(p1 - home[0]):+.2f}, '
+              f'axis 2 {deg(p2 - home[1]):+.2f} degrees, distance to the edge {deg(c):.2f} degrees.')
 
     # --- Geometry / profiles ----------------------------------------------
 
@@ -348,39 +351,42 @@ class AxisLimitGuard:
         poly = [(rad(a), rad(b)) for a, b in limits['polygon_deg']]
         problems = polygon_problems(poly)
         if problems:
-            raise LimitError('Umriss in der Grenzen-Datei ist ungueltig: ' + ' '.join(problems))
+            raise LimitError(Msg('The outline in the limits file is invalid: {problems}', problems=join(problems)))
         holes = [[(rad(a), rad(b)) for a, b in zone] for zone in (limits.get('exclusions_deg') or []) if zone]
         home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
         problems = exclusion_problems(poly, holes, home)
         if problems:
-            raise LimitError('Sperrzonen in der Grenzen-Datei sind ungueltig: ' + ' '.join(problems))
+            raise LimitError(Msg('The exclusion zones in the limits file are invalid: {problems}',
+                                 problems=join(problems)))
         self.poly, self.holes, self.home = poly, holes, home
 
     def clearance_at(self, p: Point) -> float:
         '''Distance from p to the boundary of the permitted area (incl. safety margin), >= 0 permitted.'''
         return clearance(p, self.poly, self.margin, self.holes)
 
-    def set_profile(self, name: str, limits: dict[str, Any]) -> str | None:
+    def set_profile(self, name: str, limits: dict[str, Any]) -> Msg | None:
         '''
         Activate another profile (another setup). Returns a warning if the
         mount is currently outside the new area (then only moves inward
         are possible).
         '''
         if int(limits['cpr'][1]) != self.mount.cpr[1] or int(limits['cpr'][2]) != self.mount.cpr[2]:
-            raise LimitError(f'Profil {name}: Schritte pro Umdrehung passen nicht zur Montierung. Bitte neu einlernen.')
+            raise LimitError(Msg('Profile {name}: the steps per revolution do not match the mount. '
+                                 'Please teach it again.', name=name))
         new_home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
         tol = rad(float(self.settings['home_tolerance_degrees']))
         if abs(new_home[0] - self.home[0]) > tol or abs(new_home[1] - self.home[1]) > tol:
-            raise LimitError(f'Profil {name} wurde mit einer anderen Home-Stellung eingelernt als das aktive Profil. '
-                             'Bitte beide Profile nach dem Einschalten in derselben Home-Stellung einlernen.')
+            raise LimitError(Msg('Profile {name} was taught with a different home position than the active '
+                                 'profile. Please teach both profiles at the same home position after '
+                                 'switching on.', name=name))
         self._load_geometry(limits)
         self.profile = name
         self.limited = False
         p = (unwrap_pos(self.last_pos[1]), unwrap_pos(self.last_pos[2]))
         c = self.clearance_at(p)
         if c < 0:
-            return (f'Die Montierung steht ausserhalb des Bereichs von Profil {name} '
-                    f'(um {deg(-c):.1f} Grad). Nur Fahrten zurueck in den erlaubten Bereich sind moeglich.')
+            return Msg('The mount is outside the area of profile {name} (by {d:.1f} degrees). '
+                       'Only moves back into the allowed area are possible.', name=name, d=deg(-c))
         return None
 
     # --- Refining the area from the browser -------------------------------
@@ -390,42 +396,46 @@ class AxisLimitGuard:
     def refine_preview(self, p: Point) -> dict[str, Any]:
         '''
         What adding the axis position p as a new boundary vertex would do.
-        Returns {'kind': 'outline'|'hole'|'inside'|'invalid', 'poly': [...], 'hole': index, 'msg': str}.
+        Returns {'kind': 'outline'|'hole'|'inside'|'invalid', 'poly': [...], 'hole': index, 'msg': Msg}.
         '''
         for k, hole in enumerate(self.holes):
             if point_in_polygon(p, hole):
                 new_hole = insert_vertex(hole, p, grow=False)
                 if new_hole is None:
-                    return {'kind': 'invalid', 'msg': f'Sperrzone {k + 1} lässt sich hier nicht verkleinern.'}
+                    return {'kind': 'invalid', 'msg': Msg('Exclusion zone {k} cannot be shrunk here.', k=k + 1)}
                 holes = [list(h) for h in self.holes]
                 holes[k] = new_hole
                 err = self._refine_check(self.poly, holes)
                 if err:
                     return {'kind': 'invalid', 'msg': err}
-                return {'kind': 'hole', 'hole': k, 'poly': new_hole, 'msg': f'verkleinert Sperrzone {k + 1}'}
+                return {'kind': 'hole', 'hole': k, 'poly': new_hole, 'msg': Msg('shrinks exclusion zone {k}', k=k + 1)}
         if point_in_polygon(p, self.poly):
-            return {'kind': 'inside', 'msg': 'liegt schon im Umriss (gesperrt ist hier höchstens der Sicherheitsabstand)'}
+            return {'kind': 'inside', 'msg': Msg('already inside the outline (at most the safety margin blocks here)')}
         if edge_distance(p, self.poly) < self.MIN_REFINE_STEP:
-            return {'kind': 'invalid', 'msg': 'zu nah am bisherigen Rand (unter 0,2 Grad)'}
+            return {'kind': 'invalid', 'msg': Msg('too close to the current edge (below 0.2 degrees)')}
         new_poly = insert_vertex(self.poly, p, grow=True)
         if new_poly is None:
-            return {'kind': 'invalid', 'msg': 'kein Randstück, an dem dieser Punkt den Umriss nur vergrößert (Umriss würde sich überkreuzen oder anderswo schrumpfen)'}
+            return {'kind': 'invalid', 'msg': Msg('no boundary edge where this point only enlarges the outline '
+                                                  '(the outline would cross itself or shrink elsewhere)')}
         err = self._refine_check(new_poly, self.holes)
         if err:
             return {'kind': 'invalid', 'msg': err}
-        return {'kind': 'outline', 'poly': new_poly, 'msg': 'erweitert den Umriss'}
+        return {'kind': 'outline', 'poly': new_poly, 'msg': Msg('extends the outline')}
 
-    def _refine_check(self, poly: list[Point], holes: list[list[Point]]) -> str | None:
+    def _refine_check(self, poly: list[Point], holes: list[list[Point]]) -> Msg | None:
         problems = polygon_problems(poly)
         if problems:
             return problems[0]
         if not point_in_polygon(self.home, poly):
-            return 'Home-Position läge außerhalb des Umrisses.'
+            return Msg('The home position would lie outside the outline.')
         problems = exclusion_problems(poly, holes, self.home)
         return problems[0] if problems else None
 
-    def refine_add(self, p: Point) -> str:
-        '''Add p as a boundary vertex (takes effect immediately, not yet saved). Raises LimitError.'''
+    def refine_add(self, p: Point) -> Msg:
+        '''
+        Add p as a boundary vertex (takes effect immediately, not yet saved). Returns what was
+        done, e.g. "extends the outline". Raises LimitError.
+        '''
         prev = self.refine_preview(p)
         if prev['kind'] not in ('outline', 'hole'):
             raise LimitError(prev['msg'])
@@ -437,7 +447,8 @@ class AxisLimitGuard:
             holes[prev['hole']] = prev['poly']
             self.holes = holes
         self.limited = False
-        return str(prev['msg'])
+        what: Msg = prev['msg']
+        return what
 
     def refine_undo(self) -> bool:
         if not self.refine_undo_stack:
@@ -449,7 +460,7 @@ class AxisLimitGuard:
     def refine_save(self) -> str:
         '''Write the refined area to the active limits file; the previous file is kept as .bak.'''
         if not self.file:
-            raise LimitError('Keine Grenzen-Datei bekannt.')
+            raise LimitError(Msg('No limits file is known.'))
         if os.path.exists(self.file):
             shutil.copy2(self.file, self.file + '.bak')
         save_limits(self.file, self.mount.cpr, {1: self.home[0], 2: self.home[1]}, self.poly, self.holes)
@@ -517,13 +528,13 @@ class AxisLimitGuard:
                 self.wrong_way[axis] = 0.0
             if self.wrong_way[axis] > self.trip_dist:
                 self._emergency_stop()
-                raise LimitError(f'Achse {axis} bewegt sich entgegen der befohlenen Richtung. '
-                                 'Not-Stopp ausgeloest.')
+                raise LimitError(Msg('Axis {axis} moves against the commanded direction. '
+                                     'Emergency stop triggered.', axis=axis))
         else:
             self.wrong_way[axis] = 0.0
         return p
 
-    def set_bypass(self, off: bool) -> str | None:
+    def set_bypass(self, off: bool) -> Msg | None:
         '''Disable/enable monitoring. Returns a warning on enabling, if applicable.'''
         if off == self.bypass:
             return None
@@ -538,8 +549,8 @@ class AxisLimitGuard:
             return None
         c = self.clearance_at(p)
         if c < 0:
-            return (f'Die Montierung steht ausserhalb des sicheren Bereichs (um {deg(-c):.1f} Grad). '
-                    'Nur Fahrten zurueck in den erlaubten Bereich sind moeglich.')
+            return Msg('The mount is outside the safe area (by {d:.1f} degrees). '
+                       'Only moves back into the allowed area are possible.', d=deg(-c))
         return None
 
     def _slew_axis(self, axis: int, rate: float) -> None:
@@ -590,7 +601,7 @@ class AxisLimitGuard:
 
         is_limited = scale < 1.0
         if is_limited and not self.limited:
-            self.notify('Rand des sicheren Bereichs erreicht, Fahrt wird begrenzt.')
+            self.notify(Msg('Edge of the safe area reached, motion is limited.'))
         self.limited = is_limited
 
         new = {1: r1 * scale, 2: r2 * scale}
@@ -608,21 +619,22 @@ def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_p
     '''Activates the safe area if config.yaml contains an axis_limits section.'''
     settings = get_settings(config_data)
     if settings is None or not settings['file']:
-        print('WARNUNG: Keine Achsgrenzen konfiguriert (axis_limits.file in config.yaml).')
+        print('WARNING: No axis limits configured (axis_limits.file in config.yaml).')
         return None
     if not isinstance(telescope, skywatcher.SkyWatcher):
-        raise LimitError(f'Achsgrenzen werden nur fuer Sky-Watcher-Protokolle unterstuetzt, nicht {telescope_protocol}.')
+        raise LimitError(Msg('Axis limits are only supported for Sky-Watcher protocols, not {protocol}.',
+                             protocol=telescope_protocol))
     limits = load_limits(resolve_path(settings['file']))
     return AxisLimitGuard(telescope, limits, settings)
 
 def profile_path(config_data: dict[str, Any], name: str) -> str:
     settings = get_settings(config_data)
     if settings is None or name not in settings['profiles']:
-        raise LimitError(f'Unbekanntes Profil: {name}')
+        raise LimitError(Msg('Unknown profile: {name}', name=name))
     return resolve_path(settings['profiles'][name])
 
 def load_profile(config_data: dict[str, Any], name: str) -> dict[str, Any]:
     settings = get_settings(config_data)
     if settings is None or name not in settings['profiles']:
-        raise LimitError(f'Unbekanntes Profil: {name}')
+        raise LimitError(Msg('Unknown profile: {name}', name=name))
     return load_limits(resolve_path(settings['profiles'][name]))
