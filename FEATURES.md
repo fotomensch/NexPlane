@@ -436,7 +436,9 @@ so new sites can be set up from the browser.
 (`--web`), and optionally `satellites.py` after asking (refreshing TLEs older than 2 days). When
 NexPlane ends, the helper windows close too; programs that were already running are left alone.
 It waits for dump1090 on TCP 30003 and for `telescope_server` on its UDP port. `--hootl` gives a
-dry run. Paths are currently hard-coded for one setup.
+dry run. The programs run with the same Python as the script; dump1090 comes from the config key
+`dump1090` (path of the executable, default: `dump1090` on the `PATH`) or `--dump1090`, and the
+mount protocol is the usual `telescope_protocol` setting.
 
 ### 20 Serial port auto-detection
 
@@ -476,6 +478,7 @@ All new keys are optional.
 | `focal_lengths_mm`, `focal_length_mm`, `sensor_width_mm` | [150, 300, 600], 150, 23.5 | 13 |
 | `gps` | true | 17 |
 | `track_log` | true | 22 |
+| `dump1090` | `dump1090` on the `PATH` | 19 |
 
 Example for an EQ5 with limits, the browser GUI and a gamepad:
 

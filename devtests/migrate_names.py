@@ -63,6 +63,10 @@ if os.path.exists(cfg):
     lim = data.get('axis_limits') or {}
     if lim.get('file') and not lim.get('profiles'):
         todo.append('the single limits file is now profile "default" (was "standard"); nothing to change')
+    if 'dump1090:' not in text:
+        todo.append('start_nexplane.py: add "dump1090: /path/to/dump1090" (the executable) unless dump1090 is on the PATH; '
+                    'it now uses telescope_protocol from config.yaml and the Python that runs it '
+                    '(run it with the venv Python)')
     if todo:
-        print('  Please rename in config.yaml by hand: ' + '; '.join(todo))
+        print('  Please change in config.yaml by hand: ' + '; '.join(todo))
 print('Done. The old files can be deleted once NexPlane runs with the new ones.')

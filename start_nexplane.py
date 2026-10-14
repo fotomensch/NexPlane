@@ -15,6 +15,10 @@ Usage:
     ./start_nexplane.py            normal start
     ./start_nexplane.py --hootl    trial run with simulated mount
 
+The programs run with the same Python as this script. dump1090 is taken from the
+config key "dump1090" (path of the executable, default: dump1090 on the PATH) or from
+--dump1090; the mount protocol is the usual telescope_protocol setting.
+
 A program that is already running (port in use) is not started a second time.
 To quit: exit NexPlane (button in the browser, Ctrl+C or closing its window). The
 helper windows started by this script (dump1090, telescope_server, satellites)
@@ -31,10 +35,12 @@ import subprocess
 import sys
 import time
 
+from typing import Any
+
+import config
+
 NEXPLANE_DIR = os.path.dirname(os.path.abspath(__file__))
-PYTHON = '/home/linux/myvenv/bin/python3'
-DUMP1090_DIR = '/home/linux/dump1090'
-DUMP1090 = os.path.join(DUMP1090_DIR, 'dump1090')
+PYTHON = sys.executable
 
 PORT_DUMP1090 = 30003
 PORT_TELESCOPE = 45345
@@ -148,25 +154,35 @@ def tle_outdated() -> bool:
             return True
     return False
 
-def check_prerequisites() -> list[str]:
+def check_prerequisites(dump1090: str | None) -> list[str]:
     problems = []
     if shutil.which('gnome-terminal') is None:
         problems.append('gnome-terminal not found.')
-    if not os.access(PYTHON, os.X_OK):
-        problems.append(f'Python not found: {PYTHON}')
-    if not os.access(DUMP1090, os.X_OK):
-        problems.append(f'dump1090 not found: {DUMP1090}')
+    if dump1090 is None:
+        problems.append('dump1090 not found (set "dump1090: /path/to/dump1090" in config.yaml or use --dump1090).')
     for f in ('nexplane.py', 'telescope_server.py', 'satellites.py', 'webgui.py'):
         if not os.path.exists(os.path.join(NEXPLANE_DIR, f)):
             problems.append(f'{f} is missing in {NEXPLANE_DIR}')
     return problems
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description='Starts dump1090, telescope_server and NexPlane (browser GUI).')
+def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
+    parser, config_data, validators = config.get_arg_parser_and_config_data(
+        description='Starts dump1090, telescope_server and NexPlane (browser GUI).')
+    config.add_arg_telescope_protocol(parser, config_data, validators)
     parser.add_argument('--hootl', action='store_true', help='Trial run with a simulated mount')
+    parser.add_argument('--dump1090', default=str(config_data.get('dump1090', 'dump1090')),
+                        help='Path of the dump1090 executable (default from config.yaml: dump1090, '
+                             'otherwise dump1090 on the PATH)')
     args = parser.parse_args()
+    config.validate(validators, args)
+    return args, config_data
 
-    problems = check_prerequisites()
+def main() -> None:
+    args, config_data = parse_args_and_config()
+    dump1090 = shutil.which(args.dump1090)
+    web_port = int(config_data.get('web_port', 8765))
+
+    problems = check_prerequisites(dump1090)
     if problems:
         print('Cannot start:')
         for p in problems:
@@ -186,7 +202,9 @@ def main() -> None:
         print('dump1090 is already running.')
     else:
         print('Starting dump1090 ...')
-        open_terminal('dump1090', DUMP1090_DIR, f'{shlex.quote(DUMP1090)} --interactive --net', 'dump1090')
+        assert dump1090 is not None
+        open_terminal('dump1090', os.path.dirname(os.path.abspath(dump1090)),
+                      f'{shlex.quote(dump1090)} --interactive --net', 'dump1090')
         if not wait_for_port(PORT_DUMP1090, 'dump1090', 20):
             print('dump1090 is not reachable. Is the RTL stick plugged in? Errors are shown in the dump1090 window.')
             sys.exit(1)
@@ -198,7 +216,8 @@ def main() -> None:
         else:
             print('Starting telescope_server ...')
             open_terminal('telescope_server', NEXPLANE_DIR,
-                          f'{shlex.quote(PYTHON)} telescope_server.py --telescope-protocol skywatcher-mount-head-usb',
+                          f'{shlex.quote(PYTHON)} telescope_server.py --telescope-protocol '
+                          f'{shlex.quote(args.telescope_protocol)}',
                           'telescope_server')
             if not wait_for_port(PORT_TELESCOPE, 'telescope_server', 20, udp=True):
                 print('telescope_server is not reachable. Is the mount switched on and connected by USB? '
@@ -233,7 +252,7 @@ def main() -> None:
     open_nexplane_terminal(NEXPLANE_DIR,
                            f'{shlex.quote(PYTHON)} nexplane.py ' + ' '.join(shlex.quote(a) for a in nexplane_args))
     print()
-    print('Done. The browser opens shortly (http://127.0.0.1:8765/).')
+    print(f'Done. The browser opens shortly (http://127.0.0.1:{web_port}/).')
     print('Align there first: card "Control & alignment".')
     print('When NexPlane ends, the helper windows started here close automatically.')
 
