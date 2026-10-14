@@ -67,6 +67,10 @@ def mech_vec(h_m: float, d_m: float, cone: float) -> Vec:
     return (c * p[0] + s * v[0], c * p[1] + s * v[1], c * p[2] + s * v[2])
 
 class Model:
+    '''
+    Pointing model of one setup: zero points, polar axis misalignment and cone error, fitted to
+    sync points (see the module docstring).
+    '''
     def __init__(self) -> None:
         self.ex = 0.0
         self.ey = 0.0
@@ -137,6 +141,7 @@ class Model:
         return matmul_v(rotation(ex, ey), mech_vec(h_m, d_m, cone))
 
     def _residual(self, params: list[float], pt: dict[str, Any]) -> tuple[float, float]:
+        '''Pointing error at a sync point for the given parameters: (hour angle, declination) components, rad.'''
         lst = self.lst(pt['t'])
         h_t, d_t = lst - pt['ra'], pt['dec']
         p = self._predict(params, pt)
@@ -262,6 +267,7 @@ class Model:
         return alt - abs(lat), az
 
     def status(self, lat: float) -> dict[str, Any]:
+        '''Summary for the GUI: number of points, residuals and the polar axis error in degrees.'''
         pe = self.polar_error(lat)
         return {'points': len(self.points), 'active': self.active,
                 'list': [{'name': str(pt.get('name', '')), 'focal': pt.get('focal'),

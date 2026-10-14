@@ -100,6 +100,7 @@ def point_in_polygon(p: Point, poly: list[Point]) -> bool:
     return inside
 
 def segment_distance(p: Point, a: Point, b: Point) -> float:
+    '''Distance from point p to the segment a-b.'''
     px, py = p
     ax, ay = a
     bx, by = b
@@ -246,6 +247,7 @@ def save_limits(path: str,
     return data
 
 def load_limits(path: str) -> dict[str, Any]:
+    '''Read a limits file written by save_limits(); raises LimitError if it is missing or invalid.'''
     try:
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -348,6 +350,7 @@ class AxisLimitGuard:
     # --- Geometry / profiles ----------------------------------------------
 
     def _load_geometry(self, limits: dict[str, Any]) -> None:
+        '''Take outline, exclusion zones and home position from a limits file (after validating them).'''
         poly = [(rad(a), rad(b)) for a, b in limits['polygon_deg']]
         problems = polygon_problems(poly)
         if problems:
@@ -423,6 +426,7 @@ class AxisLimitGuard:
         return {'kind': 'outline', 'poly': new_poly, 'msg': Msg('extends the outline')}
 
     def _refine_check(self, poly: list[Point], holes: list[list[Point]]) -> Msg | None:
+        '''Problem with a refined outline and zones (as a message), or None if they are valid.'''
         problems = polygon_problems(poly)
         if problems:
             return problems[0]
@@ -477,6 +481,7 @@ class AxisLimitGuard:
     # --- Helper functions -------------------------------------------------
 
     def _emergency_stop(self) -> None:
+        '''Stop both axes and refuse all further motion commands.'''
         self.tripped = True
         for axis in [1, 2]:
             try:
@@ -513,6 +518,10 @@ class AxisLimitGuard:
     # --- hooked methods ---------------------------------------------------
 
     def _inquire_position(self, axis: int) -> float:
+        '''
+        Replaces SkyWatcher._inquire_position: reads the position and trips the emergency stop if an
+        axis moves against the commanded direction.
+        '''
         p = self._orig_inquire(axis)
         prev = self.last_pos[axis]
         self.last_pos[axis] = p
@@ -554,6 +563,10 @@ class AxisLimitGuard:
         return None
 
     def _slew_axis(self, axis: int, rate: float) -> None:
+        '''
+        Replaces SkyWatcher._slew_axis: scales the commanded rates of both axes down so that the
+        predicted motion stays inside the allowed area (see the class docstring).
+        '''
         if self.tripped:
             self._orig_slew(axis, 0.0)
             return

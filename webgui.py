@@ -62,6 +62,10 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(f'{type(obj).__name__} is not JSON serializable')
 
 class WebGui:
+    '''
+    Browser GUI: a local HTTP server plus the interface the main loop expects from the GUI layers.
+    The HTTP handler threads and the main loop share the state below; every access holds self.lock.
+    '''
     def __init__(self, observatory_location: coords.EarthLocation, kp: float, ki: float, kd: float,
                  port: int = 8765, open_browser: bool = True, mount_mode: str = 'eq'):
         self.observatory = observatory_location
@@ -391,6 +395,7 @@ class WebGui:
             return self.aligned and self.test_aligned
 
     def set_unaligned(self) -> None:
+        '''Back to "not aligned": stop tracking and drop the blind-area grid.'''
         with self.lock:
             self.aligned = False
             self.aligned_text = ''
@@ -422,6 +427,7 @@ class WebGui:
         return self.pole_cache[1]
 
     def state(self) -> dict[str, Any]:
+        '''Everything the page shows, as JSON-ready data (polled by the page several times per second).'''
         with self.lock:
             planes = dict(self.planes)
             tracked = self.tracked_plane
@@ -534,6 +540,10 @@ class WebGui:
     # ------------------------------------------------------------------
 
     def command(self, name: str, data: dict[str, Any]) -> dict[str, Any]:
+        '''
+        Handle a command from the page (POST /api/<name>). Commands that need the mount are queued for
+        the main loop; returns {ok: True} or {ok: False, error: message}.
+        '''
         with self.lock:
             if name == 'flip_test' and self.manual_available and not self.aligned:
                 return _error(Msg('Align first (card "Control & alignment").'))
@@ -737,6 +747,10 @@ class WebGui:
     # ------------------------------------------------------------------
 
     def _make_handler(self) -> type[BaseHTTPRequestHandler]:
+        '''
+        HTTP request handler bound to this WebGui. Only requests to 127.0.0.1/localhost are served,
+        and every API call needs the token of this run.
+        '''
         webgui = self
 
         class Handler(BaseHTTPRequestHandler):

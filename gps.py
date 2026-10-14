@@ -43,6 +43,7 @@ def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * 6371000 * math.asin(math.sqrt(min(1.0, a)))
 
 class GpsReader:
+    '''Polls the GPS position of the WWAN modem through mmcli in a background thread.'''
     def __init__(self, interval_s: float = 5.0):
         self.interval = interval_s
         self.lock = threading.Lock()
@@ -53,6 +54,7 @@ class GpsReader:
         self.thread.start()
 
     def state(self) -> dict[str, Any]:
+        '''{'status': message, 'fix': {'lat', 'lon', 'alt', 'sats', 'age_s'} or None} for the GUI.'''
         with self.lock:
             fix = dict(self.fix) if self.fix else None
             status = self.status
@@ -77,6 +79,7 @@ class GpsReader:
             return 1, str(e)
 
     def _run(self) -> None:
+        '''Background thread: find the modem, enable GPS, then read the position every few seconds.'''
         if not shutil.which('mmcli'):
             self._set(Msg('not available (ModemManager/mmcli missing)'))
             return

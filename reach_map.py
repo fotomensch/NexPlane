@@ -88,6 +88,7 @@ class ReachWorker:
                 self.thread.start()
 
     def _run(self) -> None:
+        '''Compute grids until no request is pending (the newest request wins).'''
         while True:
             with self.lock:
                 job, self.pending = self.pending, None

@@ -66,6 +66,7 @@ EVIOCSFF = _ioc(1, 0x80, FF_EFFECT_SIZE)     # _IOW('E', 0x80, struct ff_effect)
 # --- Device discovery ----------------------------------------------------------
 
 def _caps(event_dir: str, kind: str) -> int:
+    '''Capability bitmask of an input device (from /sys/class/input/eventN/device/capabilities).'''
     try:
         with open(os.path.join(event_dir, 'device', 'capabilities', kind)) as f:
             words = f.read().split()
@@ -92,6 +93,7 @@ def list_devices() -> list[dict[str, Any]]:
     return out
 
 def find_device(name_filter: str = '') -> dict[str, Any] | None:
+    '''First gamepad whose name contains name_filter (any gamepad if empty), or None.'''
     for dev in list_devices():
         if not dev['gamepad']:
             continue
@@ -141,6 +143,7 @@ class Gamepad:
         return (a - self.deadzone) / (1.0 - self.deadzone) * (1 if v > 0 else -1)
 
     def axes(self) -> dict[str, float]:
+        '''Current stick and trigger positions (see the class docstring); all 0 while disconnected.'''
         with self.lock:
             if not self.connected:
                 return {k: 0.0 for k in AXES.values()}
@@ -169,6 +172,7 @@ class Gamepad:
         threading.Thread(target=self._rumble, args=(strong, weak, ms, count), daemon=True).start()
 
     def _rumble(self, strong: float, weak: float, ms: int, count: int) -> None:
+        '''Play a rumble effect count times (runs in its own thread).'''
         for i in range(count):
             fd = self.fd
             if fd is None:
@@ -193,6 +197,7 @@ class Gamepad:
     # --- Thread ---
 
     def _close_fd(self) -> None:
+        '''Close the device after an error or disconnect; axes return to 0.'''
         fd, self.fd = self.fd, None
         self.ff_ids = {}
         if fd is not None:
@@ -205,6 +210,7 @@ class Gamepad:
             self.raw = {k: 0.0 for k in AXES.values()}
 
     def _open(self) -> bool:
+        '''Open the gamepad and read its axis ranges. Returns False (and sets error) if there is none.'''
         if self.fixed_path:
             dev: dict[str, Any] = {'path': self.fixed_path, 'name': self.fixed_path}
         else:
@@ -250,6 +256,7 @@ class Gamepad:
         return (2.0 * (value - lo) / (hi - lo)) - 1.0
 
     def _set_abs(self, code: int, value: int) -> None:
+        '''Store an axis value; a D-pad (hat) change becomes a button press.'''
         if code in AXES:
             with self.lock:
                 self.raw[AXES[code]] = self._norm(code, value)
@@ -272,6 +279,7 @@ class Gamepad:
             self._set_abs(code, value)
 
     def _run(self) -> None:
+        '''Background thread: read input events, reconnect after errors.'''
         while not self.stop_flag:
             if self.fd is None:
                 if not self._open():
@@ -297,6 +305,7 @@ class Gamepad:
                 time.sleep(1.0)
 
 def main() -> None:
+    '''Test mode: list input devices, then show buttons and axes live.'''
     parser = argparse.ArgumentParser(description='Test a gamepad: shows input devices, buttons and axes.')
     parser.add_argument('--test', action='store_true', help='Show buttons and axes live')
     parser.add_argument('--name', default='', help='Only devices whose name contains this text')

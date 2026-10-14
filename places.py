@@ -20,6 +20,7 @@ def path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'places.yaml')
 
 def load() -> dict[str, dict[str, Any]]:
+    '''Places created in the browser, from places.yaml: {name: {lat_degrees, lon_degrees, alt_meters, type}}.'''
     try:
         with open(path()) as f:
             data = yaml.safe_load(f) or {}
@@ -40,6 +41,7 @@ NAME_RE = re.compile(r'^[\w .\-()]{1,40}$')   # \w includes letters with accents
 TYPES = ('location', 'landmark')
 
 def validate(name: str, place_type: str, lat: float, lon: float, alt: float) -> Msg | None:
+    '''Error message for an invalid entry, or None.'''
     if not NAME_RE.match(name or '') or name.strip() != name:
         return Msg('Name: 1-40 characters: letters, digits, spaces, . - ( ) _')
     if place_type not in TYPES:
@@ -66,6 +68,7 @@ def save(name: str, place_type: str, lat: float, lon: float, alt: float, config_
     return None
 
 def delete(name: str) -> Msg | None:
+    '''Delete a place created in the browser. Returns an error message or None.'''
     own = load()
     if name not in own:
         return Msg('"{name}" was not created in the browser (change entries from config.yaml there).', name=name)

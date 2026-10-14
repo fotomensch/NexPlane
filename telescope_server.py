@@ -63,6 +63,7 @@ MOUNT_DRIVERS = ('pl2303', 'ch341', 'ch341-uart', 'cp210x', 'ftdi_sio')
 MODEM_DRIVERS = ('option', 'option1', 'qcserial', 'sierra', 'qmi_wwan', 'cdc_mbim')
 
 def serial_driver(tty: str) -> str:
+    '''Name of the kernel driver behind a serial port (e.g. pl2303), or an empty string.'''
     try:
         return os.path.basename(os.path.realpath(f'/sys/class/tty/{os.path.basename(tty)}/device/driver'))
     except OSError:

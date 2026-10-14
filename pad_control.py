@@ -52,11 +52,13 @@ def get_settings(config_data: dict[str, Any]) -> dict[str, Any]:
     return s
 
 class PadControl:
+    '''Turns gamepad sticks and buttons into correction and slew rates (see the module docstring).'''
     def __init__(self, settings: dict[str, Any], pad: Any):
         self.s = settings
         self.pad = pad
 
     def _image_vec(self, x: float, y: float) -> tuple[float, float]:
+        '''Apply swap_xy, invert_x and invert_y from the config (camera orientation).'''
         if self.s['swap_xy']:
             x, y = y, x
         if self.s['invert_x']:
@@ -109,6 +111,7 @@ class PadControl:
         return e / mag, n / mag, rate
 
     def step(self, press: str) -> tuple[float, float] | None:
+        '''Correction step for a D-pad press in the image frame (rad), or None for other buttons.'''
         st = math.radians(float(self.s['step_degrees']))
         vec = {'up': (0, 1), 'down': (0, -1), 'left': (-1, 0), 'right': (1, 0)}.get(press)
         if vec is None:
@@ -322,6 +325,7 @@ class TrackLog:
         self.f.flush()
 
     def sync(self, row: dict[str, Any]) -> None:
+        '''Append one sync point to sync_points.csv.'''
         new = not os.path.exists(self.sync_path)
         with open(self.sync_path, 'a', newline='') as f:
             w = csv.writer(f)

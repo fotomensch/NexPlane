@@ -29,6 +29,7 @@ def _rel(points: list[Point], home: Point) -> list[Point]:
     return [(deg(p[0] - home[0]), deg(p[1] - home[1])) for p in points]
 
 def _bounds(pts: list[Point], min_span: float = 10.0) -> tuple[float, float, float, float]:
+    '''Plot range around the points, at least min_span degrees wide, with a small border.'''
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
@@ -134,6 +135,7 @@ def _nice_step(span: float) -> float:
 
 def write_svg(path: str, home: Point, boundary: list[Point], current: Point, margin: float, status: str,
               exclusions: 'list[list[Point]] | tuple[()]' = ()) -> None:
+    '''Write an SVG preview of the outline, exclusion zones and the allowed area (incl. safety margin).'''
     W, H = 900, 700
     L, R, T, B = 70, 30, 100, 60
     rel_b = _rel(boundary, home)

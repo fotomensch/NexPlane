@@ -71,6 +71,7 @@ def udp_port_in_use(port: int) -> bool:
         sock.close()
 
 def wait_for_port(port: int, name: str, timeout_s: float, udp: bool = False) -> bool:
+    '''Wait until a program listens on the port; prints progress. False after timeout_s.'''
     print(f'  waiting for {name} (port {port}) ', end='', flush=True)
     t0 = time.time()
     while time.time() - t0 < timeout_s:
@@ -135,6 +136,7 @@ def open_nexplane_terminal(workdir: str, command: str) -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def ask_yes_no(question: str, default: bool = False) -> bool:
+    '''Ask a yes/no question on the terminal.'''
     hint = '[Y/n]' if default else '[y/N]'
     while True:
         answer = input(f'{question} {hint} ').strip().lower()
@@ -146,6 +148,7 @@ def ask_yes_no(question: str, default: bool = False) -> bool:
             return False
 
 def tle_outdated() -> bool:
+    '''True if a TLE file for satellites.py is missing or older than TLE_MAX_AGE_DAYS.'''
     for rel in TLE_FILES:
         path = os.path.join(NEXPLANE_DIR, rel)
         if not os.path.exists(path):
@@ -155,6 +158,7 @@ def tle_outdated() -> bool:
     return False
 
 def check_prerequisites(dump1090: str | None) -> list[str]:
+    '''Problems that prevent the start (missing programs or files).'''
     problems = []
     if shutil.which('gnome-terminal') is None:
         problems.append('gnome-terminal not found.')

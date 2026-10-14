@@ -19,6 +19,7 @@ import time
 import serial
 
 def usb_info(tty: str) -> str:
+    '''Driver and USB vendor/product of a serial port.'''
     name = os.path.basename(tty)
     dev = os.path.realpath(f'/sys/class/tty/{name}/device')
     parts = []
@@ -41,6 +42,7 @@ def usb_info(tty: str) -> str:
     return ', '.join(parts)
 
 def holders(path: str) -> list[str]:
+    '''Processes that have the device open.'''
     out = []
     real = os.path.realpath(path)
     for fd in glob.glob('/proc/[0-9]*/fd/*'):

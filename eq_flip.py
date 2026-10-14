@@ -117,6 +117,7 @@ class ManualControl:
         return False
 
 class Candidate:
+    '''One way to point at a target: pier side, unwrapped raw axis targets and the clearance there.'''
     def __init__(self, side: str, ra_raw: float, dec_raw: float, clearance: float | None):
         self.side = side
         self.ra_raw = ra_raw          # unwrapped, matching the current position
@@ -128,6 +129,11 @@ class Candidate:
         return self.clearance is None or self.clearance >= 0
 
 class EqPointing:
+    '''
+    Pointing for an equatorial Sky-Watcher mount on both pier sides (see the module docstring).
+    Converts between raw axis positions and RA/Dec, chooses the side for each target and drives
+    the mount there through Tracker.go_raw().
+    '''
     def __init__(self, telescope: Any, ra_cal: float, dec_cal: float,
                  guard: 'axis_limits.AxisLimitGuard | None' = None,
                  notify: Callable[[Text], None] = print,
@@ -161,6 +167,7 @@ class EqPointing:
     # ------------------------------------------------------------------
 
     def raw_to_radec(self, ra_raw: float, dec_raw: float) -> tuple[float, float, str]:
+        '''Raw axis position -> (ra, dec, side) on the sky.'''
         d = _wrap(dec_raw - self.corr_dec + self.dec_cal, -math.pi)     # -180 .. 180 degrees
         ra = ra_raw - self.corr_ra + self.ra_cal
         if self.model.active:
@@ -210,6 +217,10 @@ class EqPointing:
 
     def candidates(self, ra_t: float, dec_t: float, ra_raw_now: float,
                    dec_raw_now: float | None = None) -> dict[str, Candidate]:
+        '''
+        Both ways (side A and B) to point at (ra_t, dec_t), each with the axis targets closest to the
+        current position and its clearance in the safe area.
+        '''
         if dec_raw_now is None:
             _, dec_raw_now = self.telescope.get_ra_dec()
         out = {}
@@ -378,6 +389,10 @@ class EqPointing:
     def choose(self, cands: dict[str, Candidate], forced_side: str | None,
                ra_raw_now: float = 0.0,
                future: Callable[[float], tuple[float, float]] | None = None) -> Candidate:
+        '''
+        Pick the candidate to drive to: forced_side if given; for a new target the side where it stays
+        reachable longest; while tracking, flip only when the current side becomes unreachable.
+        '''
         now = time.monotonic()
         if forced_side is not None:
             if self.side != forced_side:

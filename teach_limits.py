@@ -102,6 +102,7 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     return args, config_data
 
 def open_mount(args: argparse.Namespace) -> tuple[mount_base.Client, skywatcher.SkyWatcher]:
+    '''Connect to the mount (or the simulator) directly, without NexPlane.'''
     client: mount_base.Client
     if args.run_hootl:
         client = skywatcher.SkyWatcherSerialHootl()
@@ -163,6 +164,7 @@ class Teacher:
         self.message = f'{self.target_name()}: point {len(target)} marked.'
 
     def undo(self) -> None:
+        '''Discard the last point of the outline or zone being edited (an empty zone is removed).'''
         target = self._target()
         if target:
             target.pop()
@@ -199,6 +201,7 @@ class Teacher:
         self.message = 'Back to the outline.'
 
     def save(self) -> None:
+        '''Save the limits file (validated by save_limits) and the SVG preview.'''
         try:
             axis_limits.save_limits(self.output, self.mount.cpr, self.home, self.boundary, self.exclusions)
             self.saved = True
@@ -233,6 +236,7 @@ class Teacher:
             self.pos[axis] = self.mount._inquire_position(axis)
 
     def problem(self) -> str | None:
+        '''First problem of the taught outline and zones, or None if they are valid.'''
         problems = axis_limits.polygon_problems(self.boundary)
         if problems:
             return str(problems[0])
@@ -244,6 +248,7 @@ class Teacher:
         return str(problems[0]) if problems else None
 
     def status_lines(self) -> list[str]:
+        '''Status lines for the screen: what is edited, last point, validity, clearance here.'''
         lines = [f'Editing: {self.target_name()}   (exclusion zones: {len(self.exclusions)})']
         target = self._target()
         if target:
@@ -264,6 +269,7 @@ class Teacher:
         return lines
 
 def ui(stdscr: Any, teacher: Teacher) -> None:
+    '''curses loop: keys -> Teacher actions, then redraw status and the ASCII map.'''
     curses.curs_set(0)
     stdscr.nodelay(True)
     stdscr.keypad(True)

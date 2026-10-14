@@ -161,6 +161,7 @@ def main() -> None:
         own_places = set(places.load())
 
         def publish_locations() -> None:
+            '''Send all locations and landmarks (config.yaml and places.yaml) to the browser.'''
             locs = config_data['locations']
             gui_iface.set_locations(args.location, {
                 name: (float(loc['lat_degrees']), float(loc['lon_degrees']), float(loc['alt_meters']))
@@ -310,6 +311,7 @@ def main() -> None:
             reach_worker = reach_map.ReachWorker(gui_iface.set_reach)
 
         def request_reach() -> None:
+            '''Recompute the blind-area grid in the background (after alignment or a model change).'''
             if reach_worker is not None and pointing is not None:
                 raw_ra, raw_dec = telescope.get_ra_dec()
                 gui_iface.set_reach_calculating()
@@ -319,6 +321,7 @@ def main() -> None:
             request_reach()
 
         def write_alignment(new_ra_cal: float, new_dec_cal: float) -> None:
+            '''Save the calibration in the same format as align.py (loadable with --alignment).'''
             with open(alignment_file, 'w') as f:
                 f.write('# Telescope alignment data saved on ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
                 yaml.dump({'mount_mode': 'eq', 'calibration': {
@@ -334,11 +337,13 @@ def main() -> None:
         home_ha_file = os.path.join(config.main_config_dir(), 'home_direction.yaml')
 
         def home_raw_now() -> tuple[float, float]:
+            '''Raw (ra_raw, dec_raw) of the home position now; ra_raw changes with sidereal time.'''
             assert manual is not None
             ra_offset = eq_flip.SIDEREAL_RAD_PER_S * (time.time() - telescope.start_time)
             return ra_offset - manual.home[0], manual.home[1]
 
         def store_home_ha() -> None:
+            '''Save the hour angle of the RA axis at the taught home position (after every alignment).'''
             if manual is None or not manual.home_is_taught or pointing is None:
                 return
             ra_raw_h, _ = home_raw_now()
@@ -378,6 +383,7 @@ def main() -> None:
         test_align = {'h': math.pi / 2}
 
         def set_test_alignment(h: float) -> bool:
+            '''Test mode: align roughly from the home position, assuming hour angle h for the RA axis.'''
             if manual is None or not manual.home_is_taught or pointing is None:
                 notify(Msg('The test alignment needs a taught home position (safe area).'))
                 return False
@@ -413,7 +419,7 @@ def main() -> None:
         max_slew = math.radians(float(config_data.get('max_slew_degrees_per_second', 5.0)))
 
         def img2ax(dx: float, dy: float) -> tuple[float, float]:
-            '''Offset in the image (rad) -> axes (ra_raw, dec_raw).'''
+            '''Offset in the camera image (rad) -> offset of the axes (ra_raw, dec_raw).'''
             assert pointing is not None
             d = None
             if not gui_iface.is_aligned():
@@ -423,6 +429,7 @@ def main() -> None:
             return pointing.image_to_axes(dx, dy, d)
 
         def plane_info(hex_id: str | None) -> tuple[str, float | None, float | None]:
+            '''Callsign and current (az, el) of an aircraft; empty values if it is unknown.'''
             if hex_id is None or hex_id not in planes:
                 return '', None, None
             try:
@@ -440,6 +447,7 @@ def main() -> None:
             gui_iface.set_focal_options(focal_steps, float(config_data.get('focal_length_mm', focal_steps[0])))
 
         def model_text() -> Text:
+            '''Short description of the active pointing model, or an empty string.'''
             assert pointing is not None
             st = pointing.model.status(obs_lat)
             if not st['active']:
@@ -538,6 +546,7 @@ def main() -> None:
             return True
 
         def remove_last_point(index: int | None = None) -> bool:
+            '''Delete a sync point (default: the last one) and refit the model.'''
             assert pointing is not None
             n = len(pointing.model.points)
             idx = n - 1 if index is None else index
@@ -554,11 +563,13 @@ def main() -> None:
             return True
 
         def compass(az: float) -> Msg:
+            '''Name of the compass direction (8 directions) for an azimuth.'''
             names = [Msg('north'), Msg('north-east'), Msg('east'), Msg('south-east'),
                      Msg('south'), Msg('south-west'), Msg('west'), Msg('north-west')]
             return names[int(((math.degrees(az) % 360) + 22.5) // 45) % 8]
 
         def plane_usable(hex_id: str) -> bool:
+            '''Can the mount reach the aircraft now on at least one pier side (within the safe area)?'''
             if pointing is None or limit_guard is None:
                 return True
             _, p_az, p_el = plane_info(hex_id)
@@ -569,6 +580,7 @@ def main() -> None:
             return any(c.feasible for c in pointing.candidates(ra_t, dec_t, raw_ra, raw_dec).values())
 
         def select_plane(direction: str, current: str | None) -> bool:
+            '''Gamepad R1/L1: track the next nearest reachable aircraft ("next") or the previous one.'''
             min_el = math.radians(float(pad_settings['min_elevation_degrees']))
             new: str | None = None
             if direction == 'next' and not gui_iface.is_aligned():
