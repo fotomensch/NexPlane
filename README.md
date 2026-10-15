@@ -602,6 +602,12 @@ gamepad:
 
 All rates and the dead zone can be set in the same section (see `pad_control.DEFAULTS`).
 
+### Tracking logs
+
+With the browser GUI in equatorial mode, NexPlane writes `logs/tracking_<time>.csv` (about 5
+rows per second while tracking) and `logs/sync_points.csv`, for measuring ADS-B latency and
+pointing errors. `track_log: false` turns this off.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

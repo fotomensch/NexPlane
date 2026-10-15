@@ -27,6 +27,7 @@ import rpc
 import skywatcher
 import sbs1
 import tracker
+import tracking_log
 import util
 
 from messages import Msg, Text, of_exception, to_json
@@ -191,6 +192,7 @@ def main() -> None:
 
     restart_location: str | None = None
     pad: gamepad.Gamepad | None = None
+    track_log: tracking_log.TrackLog | None = None
     telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
         # Telescope control interface.
@@ -362,7 +364,7 @@ def main() -> None:
             request_reach()
             return True
 
-        # Correction in the camera image and gamepad (EQ mount, browser GUI).
+        # Correction in the camera image, gamepad and log (EQ mount, browser GUI).
         padctl: pad_control.PadControl | None = None
         pad_settings = pad_control.get_settings(config_data)
         if args.web and pointing is not None:
@@ -371,6 +373,8 @@ def main() -> None:
                 pad = gamepad.Gamepad(str(pad_settings['name'] or ''), float(pad_settings['deadzone']),
                                       bool(pad_settings['rumble']), pad_settings['device'])
                 padctl = pad_control.PadControl(pad_settings, pad)
+            if config_data.get('track_log', True):
+                track_log = tracking_log.TrackLog(os.path.join(config.main_config_dir(), 'logs'))
         if manual is not None and not (args.landmark or args.alignment):
             if not rough_align():
                 notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft as aiming '
@@ -429,6 +433,7 @@ def main() -> None:
             '''
             assert pointing is not None
             raw_ra, raw_dec = telescope.get_ra_dec()
+            old_cal = (pointing.ra_cal, pointing.dec_cal)
             corr = (pointing.corr_ra, pointing.corr_dec)
             callsign, p_az, p_el = plane_info(hex_id)
             res: dict[str, Any] = {}
@@ -484,6 +489,23 @@ def main() -> None:
                 write_alignment(new_ra_cal, new_dec_cal)
             except OSError as e:
                 notify(Msg('The alignment could not be saved: {error}', error=str(e)))
+            if track_log is not None:
+                st = pointing.model.status(obs_lat)
+                try:
+                    track_log.sync({'time': time.time(), 'hex': hex_id or '', 'callsign': callsign,
+                                    'plane_az': math.degrees(p_az) if p_az is not None else None,
+                                    'plane_el': math.degrees(p_el) if p_el is not None else None,
+                                    'ra_raw': math.degrees(raw_ra), 'dec_raw': math.degrees(raw_dec),
+                                    'ra_cal_before': math.degrees(util.wrap_rad(old_cal[0], 0)),
+                                    'dec_cal_before': math.degrees(util.wrap_rad(old_cal[1], 0)),
+                                    'corr_ra': math.degrees(corr[0]), 'corr_dec': math.degrees(corr[1]),
+                                    'ra_cal_after': math.degrees(util.wrap_rad(new_ra_cal, 0)),
+                                    'dec_cal_after': math.degrees(util.wrap_rad(new_dec_cal, 0)),
+                                    'points': st['points'], 'model_active': int(st['active']),
+                                    'residual': st['rms'], 'polar_high': st['polar_high'],
+                                    'polar_east': st['polar_east'], 'cone': st['cone']})
+                except OSError:
+                    pass
             notify(msg)
             request_reach()
             return True
@@ -861,7 +883,28 @@ def main() -> None:
                                                            observatory_location,
                                                            util.get_current_time() + dt * units.s)
 
-                            pointing.command(target_tracker, tracked_plane_ra, tracked_plane_dec, future=future_radec)
+                            cand = pointing.command(target_tracker, tracked_plane_ra, tracked_plane_dec, future=future_radec)
+                            if track_log is not None and track_log.due():
+                                try:
+                                    ahead = plane_now.extrapolate(time.monotonic_ns() + 1_000_000_000)
+                                    daz = util.wrap_rad(unwrap(ahead.az.value) - unwrap(tracked_plane.az.value), -math.pi)
+                                    track_log.write({
+                                        'time': time.time(), 'hex': tracked_plane_hex_id,
+                                        'callsign': (plane_now.callsign.value or '').strip(),
+                                        'plane_az': math.degrees(unwrap(tracked_plane.az.value)),
+                                        'plane_el': math.degrees(unwrap(tracked_plane.el.value)),
+                                        'range_m': float(unwrap(tracked_plane.range.value)),
+                                        'plane_az_rate': math.degrees(daz),
+                                        'plane_el_rate': math.degrees(unwrap(ahead.el.value) - unwrap(tracked_plane.el.value)),
+                                        'scope_az': math.degrees(scope_azm_alt[0]), 'scope_el': math.degrees(scope_azm_alt[1]),
+                                        'side': cand.side,
+                                        'ra_raw': math.degrees(unwrap(pointing.last_raw)[0]),
+                                        'dec_raw': math.degrees(unwrap(pointing.last_raw)[1]),
+                                        'corr_ra': math.degrees(pointing.corr_ra), 'corr_dec': math.degrees(pointing.corr_dec),
+                                        'ra_cal': math.degrees(util.wrap_rad(pointing.ra_cal, 0)),
+                                        'dec_cal': math.degrees(util.wrap_rad(pointing.dec_cal, 0))})
+                                except (OSError, TypeError, ValueError):
+                                    pass
                         else:
                             target_tracker.go(util.wrap_rad(tracked_plane_ra - ra_cal, scope_ra_raw - math.pi),
                                               util.wrap_rad(tracked_plane_dec - dec_cal, scope_dec_raw - math.pi))
@@ -904,6 +947,8 @@ def main() -> None:
         # Stop the telescope and clean up.
         if pad is not None:
             pad.close()
+        if track_log is not None:
+            track_log.close()
         if telescope is not None:
             try:
                 telescope.slew_azmalt(0, 0)
