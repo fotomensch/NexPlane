@@ -114,6 +114,10 @@ class WebGui:
         self.profile = ''
         self.profile_request: str | None = None
         self.limits_off = False
+        # Refining the safe area from the browser (crosshair + new boundary vertices)
+        self.refine_active = False
+        self.refine_info: dict[str, Any] = {}
+        self.refine_queue: list[str] = []
         self.axis_rel: list[float] | None = None   # axis position relative to the taught home (degrees)
         # Correction in the image frame (EQ mount): steps/commands for the main loop
         self.axis_correction = False
@@ -297,9 +301,26 @@ class WebGui:
         with self.lock:
             return self.focal_mm
 
+    def refine_is_active(self) -> bool:
+        with self.lock:
+            return self.refine_active and bool(self.profiles)
+
+    def pop_refine_requests(self) -> list[str]:
+        with self.lock:
+            q, self.refine_queue = self.refine_queue, []
+            return q
+
     def set_axis_rel(self, a1: float, a2: float) -> None:
         with self.lock:
             self.axis_rel = [round(a1, 2), round(a2, 2)]
+
+    def queue_refine(self, action: str) -> None:
+        with self.lock:
+            self.refine_queue.append(action)
+
+    def set_refine_info(self, info: dict[str, Any]) -> None:
+        with self.lock:
+            self.refine_info = info
 
     def get_limits_off(self) -> bool:
         with self.lock:
@@ -411,6 +432,7 @@ class WebGui:
                 'profiles': {'list': self.profiles, 'active': self.profile},
                 'limits_off': self.limits_off and bool(self.profiles),
                 'axis_rel': self.axis_rel,
+                'refine': dict(self.refine_info, active=self.refine_active) if self.refine_active else {'active': False},
                 'axis_correction': self.axis_correction,
                 'focal': {'mm': self.focal_mm, 'steps': self.focal_steps},
                 'correction': self.corr_info,
@@ -514,6 +536,21 @@ class WebGui:
                 return _error(Msg('Align first (card "Control & alignment").'))
             if name in ('track', 'flip_test') and self.limits_off:
                 return _error(Msg('The safe area is disabled. Re-enable it first.'))
+            if name == 'refine':
+                action = data.get('action')
+                if not self.profiles:
+                    return _error(Msg('No safe area configured'))
+                if action in ('on', 'off'):
+                    self.refine_active = action == 'on'
+                    if not self.refine_active:
+                        self.refine_info = {}
+                    return {'ok': True}
+                if action not in ('add', 'undo', 'save', 'discard'):
+                    return _error(Msg('Unknown command'))
+                if not self.refine_active:
+                    return _error(Msg('Refine limits is not active'))
+                self.refine_queue.append(action)
+                return {'ok': True}
             if name == 'limits_off':
                 if not self.profiles:
                     return _error(Msg('No safe area configured'))

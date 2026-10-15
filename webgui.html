@@ -186,6 +186,17 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
         </select>
       </div>
       <div class="hint">Red tint: directions the mount cannot reach on either side of the pole with the active profile. On the map this applies to aircraft at the selected altitude.</div>
+      <details id="refine-box" style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">Refine limits</summary>
+        <div class="hint" style="margin:6px 0">The crosshair on the map (for the flight altitude chosen above) and in the sky view shows where the telescope points. Disable the safe area, move the crosshair under supervision into a red area until just before a collision, then “Accept point” (gamepad: Share). Several points along the real limit make the red area smaller; the safety margin still applies.</div>
+        <div id="refine-status" style="margin-top:6px;font-size:13px"></div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn" id="refine-add" style="font-weight:600">Accept point</button>
+          <button class="btn" id="refine-undo">Undo</button>
+          <button class="btn" id="refine-save">Save</button>
+          <button class="btn" id="refine-discard">Discard</button>
+        </div>
+      </details>
     </div>
     <div class="card" id="manual-card" style="display:none">
       <h2>Control &amp; alignment</h2>
@@ -459,6 +470,7 @@ function angDist(a, b) {
 }
 
 function updatePanel() {
+  updateRefinePanel();
   $('banner').classList.toggle('show', !!S.comm_failure);
   $('limbanner').classList.toggle('show', !!S.limits_off);
   $('btn-limoff').style.display = (S.profiles && S.profiles.active) ? '' : 'none';
@@ -613,7 +625,7 @@ function updatePanel() {
     $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft. When the tracked aircraft is centred, “Accept” turns it into a sync point.');
     const G = S.gamepad;
     $('pad-status').innerHTML = !G ? `<span class="hint">${esc(T('Gamepad disabled (config.yaml).'))}</span>`
-      : G.connected ? `🎮 <b>${esc(G.name)}</b> ${esc(T('connected'))} <span class="hint">${esc(T('– Stick: correction/move, R2 faster, ✕ sync point, □ delete last, ○ correction 0, △ STOP, R1/L1 aircraft, Options focal length'))}</span>`
+      : G.connected ? `🎮 <b>${esc(G.name)}</b> ${esc(T('connected'))} <span class="hint">${esc(T('– Stick: correction/move, R2 faster, ✕ sync point, □ delete last, ○ correction 0, △ STOP, R1/L1 aircraft, Options focal length, Share limit point'))}</span>`
       : `<span class="warn">${esc(T('🎮 not connected'))}</span> <span class="hint">${esc(msgText(G.error))}</span>`;
   } else {
     $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
@@ -778,6 +790,35 @@ $('place-list').addEventListener('click', e => {
     if (placeMap) placeMap.setView([p.lat, p.lon], 15);
   }
 });
+
+// ---- Refining the safe area (axis-space view with crosshair) ----
+$('refine-box').addEventListener('toggle', () => api('refine', {action: $('refine-box').open ? 'on' : 'off'}));
+$('refine-add').onclick = () => api('refine', {action: 'add'});
+$('refine-undo').onclick = () => api('refine', {action: 'undo'});
+$('refine-save').onclick = () => { if (confirm(T('Save the refined safe area? The previous file is kept as .bak.'))) api('refine', {action: 'save'}); };
+$('refine-discard').onclick = () => { if (confirm(T('Discard all unsaved limit points?'))) api('refine', {action: 'discard'}); };
+function telescopeInRed() {
+  // Is the current telescope direction in a blind (red) cell of the reachability grid?
+  if (!REACH || !S || !S.telescope || S.telescope.el < 0) return null;
+  const i = Math.floor(((S.telescope.az % 360) + 360) % 360 / REACH.az_step), j = Math.floor(S.telescope.el / REACH.el_step);
+  const row = REACH.rows[Math.min(REACH.rows.length - 1, Math.max(0, j))];
+  return row ? row[Math.min(row.length - 1, i)] === '0' : null;
+}
+function updateRefinePanel() {
+  const R = S && S.refine;
+  if (!R || !R.active || !R.outline) { $('refine-status').textContent = ''; return; }
+  const P = R.preview || {}, red = telescopeInRed();
+  let t = `${esc(T('Crosshair'))}: ` + (S.telescope ? `Az ${fmt(S.telescope.az, 1)}° El ${fmt(S.telescope.el, 1)}° · ` : '') +
+    (red === true ? `<span class="warn">${esc(T('in a red area'))}</span>` : red === false ? `<span style="color:var(--ok)">${esc(T('reachable direction'))}</span>` : '') +
+    ' · ' + (R.clearance >= 0 ? esc(T('inside the safe area ({d}° to the edge)', {d: fmt(R.clearance, 1)}))
+                              : `<span class="warn">${esc(T('outside the safe area'))}</span>`);
+  t += `<br>${esc(T('Point here'))}: ` + (P.kind === 'outline' || P.kind === 'hole' ? `<b>${esc(msgText(P.msg))}</b>` : `<span class="hint">${esc(msgText(P.msg))}</span>`);
+  if (!R.limits_off && R.clearance >= -0.01) t += `<br><span class="hint">${esc(T('Disable the safe area to move into the blind zone.'))}</span>`;
+  t += `<br>${esc(R.file)}: ` + (R.unsaved ? `<span class="warn">${esc(T('{n} unsaved points', {n: R.unsaved}))}</span>` : esc(T('saved')));
+  $('refine-status').innerHTML = t;
+  $('refine-add').disabled = !(P.kind === 'outline' || P.kind === 'hole');
+  $('refine-undo').disabled = $('refine-save').disabled = $('refine-discard').disabled = !R.unsaved;
+}
 
 // ---- Switch language ----
 $('opt-lang').value = LANG;
@@ -1024,7 +1065,8 @@ function drawSky() {
   // Telescope
   if (S.telescope) {
     const xy = project(S.telescope.az, Math.max(S.telescope.el, -5));
-    if (xy) { cross(xy[0], xy[1], 10, css('--scope')); strokePath(skyCirclePts(S.telescope, 1.5, 40), css('--scope'), 2); }
+    const Rf = S.refine || {}, rcol = Rf.active ? (Rf.clearance >= 0 ? css('--ok') : css('--warn')) : css('--scope');
+    if (xy) { cross(xy[0], xy[1], Rf.active ? 16 : 10, rcol); strokePath(skyCirclePts(S.telescope, 1.5, 40), rcol, Rf.active ? 3 : 2); }
     if (S.telescope.el < 0) text(T('Telescope points below the horizon'), 12, h - 12, css('--warn'), 'bold 13px system-ui');
   }
   text($('opt-mirror').checked ? T('View from above (like a map)') : T('Looking up: north at the top, east on the left'), 12, 20, css('--muted'), '12px system-ui');
@@ -1122,6 +1164,21 @@ function updateMap() {
   }
   mapLayers.dynamic.clearLayers();
   if (S.telescope) L.polyline([[o.lat, o.lon], destination(o.lat, o.lon, S.telescope.az, 150000)], {color: css('--scope'), weight: 2}).bindTooltip(T('Telescope direction')).addTo(mapLayers.dynamic);
+  // Crosshair where the line of sight reaches the selected flight altitude (same projection as the red areas)
+  if (S.telescope && S.telescope.el > 0) {
+    const alt = Number($('opt-blind-alt').value), Re = 6371000, dh = alt - (o.alt_m || 0);
+    const elAt = d => Math.atan2(dh - d * d / (2 * Re), d) / RAD;
+    let lo = 1, hi = 450000;
+    if (elAt(hi) < S.telescope.el) {
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (elAt(mid) > S.telescope.el) lo = mid; else hi = mid; }
+      const R = S.refine || {}, on = !!R.active;
+      const col = on ? (R.clearance >= 0 ? css('--ok') : css('--warn')) : css('--scope'), sz = on ? 44 : 26;
+      const svg = `<svg width="${sz}" height="${sz}" viewBox="-22 -22 44 44" style="overflow:visible"><g stroke="${col}" stroke-width="${on ? 3 : 2}" fill="none">` +
+        `<circle r="9"/><path d="M-20 0H-5M5 0H20M0 -20V-5M0 5V20"/></g></svg>`;
+      L.marker(destination(o.lat, o.lon, S.telescope.az, lo), {interactive: false, zIndexOffset: 1000,
+        icon: L.divIcon({className: '', html: svg, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2]})}).addTo(mapLayers.dynamic);
+    }
+  }
   const seen = new Set();
   for (const p of S.planes) {
     if (p.in_space || p.lat == null) continue;

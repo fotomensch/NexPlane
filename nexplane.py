@@ -393,6 +393,7 @@ def main() -> None:
         recent_planes: list[str] = []
         plane_history: list[str] = []
         last_loop_t = time.monotonic()
+        last_refine_pub = 0.0
         max_slew = math.radians(float(config_data.get('max_slew_degrees_per_second', 5.0)))
 
         def img2ax(dx: float, dy: float) -> tuple[float, float]:
@@ -698,12 +699,58 @@ def main() -> None:
                     else:
                         notify(Msg('“{name}” deleted.', name=preq['name']))
 
-                # Axis position relative to the taught home position (shown in the browser)
+                # Refining the safe area: crosshair position, preview and new boundary vertices
                 if args.web and limit_guard is not None:
                     axis_pos = (limit_guard.last_pos[1], limit_guard.last_pos[2])
                     if axis_pos[0] is not None and axis_pos[1] is not None:
                         gui_iface.set_axis_rel(math.degrees(float(axis_pos[0]) - limit_guard.home[0]),
                                                math.degrees(float(axis_pos[1]) - limit_guard.home[1]))
+                    for act in gui_iface.pop_refine_requests():
+                        if axis_pos[0] is None or axis_pos[1] is None:
+                            break
+                        p_ax = (float(axis_pos[0]), float(axis_pos[1]))
+                        try:
+                            if act == 'add':
+                                what = limit_guard.refine_add(p_ax)
+                                notify(Msg('Limit point accepted ({what}). Not saved yet.', what=what))
+                                if pad is not None:
+                                    pad.rumble(0.7, 0.7, 250)
+                            elif act == 'undo':
+                                notify(Msg('Last limit point undone.') if limit_guard.refine_undo()
+                                       else Msg('No limit point to undo.'))
+                            elif act == 'save':
+                                path = limit_guard.refine_save()
+                                notify(Msg('Safe area saved in {file} (previous version: {file}.bak).',
+                                           file=os.path.basename(path)))
+                            elif act == 'discard':
+                                limit_guard.refine_discard()
+                                notify(Msg('Unsaved limit points discarded, file reloaded.'))
+                            if act != 'save' and gui_iface.is_aligned():
+                                request_reach()
+                        except (axis_limits.LimitError, OSError) as e:
+                            notify(Msg('Refine limits: {error}', error=of_exception(e)))
+                            if pad is not None and act == 'add':
+                                pad.rumble(1.0, 1.0, 90, 3)
+                    if gui_iface.refine_is_active() and axis_pos[0] is not None and axis_pos[1] is not None \
+                            and time.monotonic() - last_refine_pub > 0.4:
+                        last_refine_pub = time.monotonic()
+                        p_ax = (float(axis_pos[0]), float(axis_pos[1]))
+                        hx, hy = limit_guard.home
+
+                        def rel(q: tuple[float, float]) -> list[float]:
+                            return [round(math.degrees(q[0] - hx), 3), round(math.degrees(q[1] - hy), 3)]
+                        prev = limit_guard.refine_preview(p_ax)
+                        gui_iface.set_refine_info({
+                            'outline': [rel(q) for q in limit_guard.poly],
+                            'holes': [[rel(q) for q in h] for h in limit_guard.holes],
+                            'pos': rel(p_ax),
+                            'clearance': round(math.degrees(limit_guard.clearance_at(p_ax)), 2),
+                            'margin': round(math.degrees(limit_guard.margin), 2),
+                            'preview': {'kind': prev['kind'], 'msg': prev['msg'].to_json(), 'hole': prev.get('hole'),
+                                        'poly': [rel(q) for q in prev['poly']] if prev.get('poly') else None},
+                            'unsaved': len(limit_guard.refine_undo_stack),
+                            'file': os.path.basename(limit_guard.file or ''),
+                            'limits_off': limit_guard.bypass})
 
                 new_profile = gui_iface.pop_profile_request() if (args.web and limit_guard is not None) else None
                 if new_profile is not None and limit_guard is not None:
@@ -712,6 +759,8 @@ def main() -> None:
                         manual.stop()
                     try:
                         warning = limit_guard.set_profile(new_profile, axis_limits.load_profile(config_data, new_profile))
+                        limit_guard.file = axis_limits.profile_path(config_data, new_profile)
+                        limit_guard.refine_undo_stack = []
                         gui_iface.set_profiles(list(limit_settings['profiles']) if limit_settings else [new_profile],
                                                limit_guard.profile)
                         if pointing is not None:
@@ -785,6 +834,8 @@ def main() -> None:
                             gui_iface.command('set_focal', {'mm': nxt})
                             notify(Msg('Focal length for sync points: {mm:.0f} mm (gamepad).', mm=nxt))
                             pad.rumble(0.4, 0.4, 100, focal_steps.index(nxt) + 1)
+                        elif press == 'share' and gui_iface.refine_is_active():
+                            gui_iface.queue_refine('add')
                         elif press == 'square':
                             if remove_last_point():
                                 pad.rumble(0.5, 0.5, 90, 2)

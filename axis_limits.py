@@ -18,6 +18,7 @@ a reachable emergency stop (power plug).
 import datetime
 import math
 import os
+import shutil
 import time
 
 import yaml
@@ -180,6 +181,38 @@ def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], hom
             problems.append(Msg('Exclusion zone {k} contains the home position.', k=k))
     return problems
 
+def signed_area(poly: list[Point]) -> float:
+    '''Signed area (shoelace formula), positive for counterclockwise order.'''
+    n = len(poly)
+    return 0.5 * sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1] for i in range(n))
+
+def insert_vertex(poly: list[Point], p: Point, grow: bool = True) -> list[Point] | None:
+    '''
+    Insert p as a new vertex on the nearest edge that keeps the polygon simple and
+    changes its area in the requested direction: grow=True only adds the triangle
+    (a, p, b) (expanding the outline), grow=False only cuts it away (shrinking a
+    exclusion zone). An edge for which p lies on the wrong side (e.g. in a concave
+    pocket of the outline) would otherwise remove area elsewhere. Returns None if
+    no edge works.
+    '''
+    n = len(poly)
+    old_area = abs(signed_area(poly))
+    order = sorted(range(n), key=lambda i: segment_distance(p, poly[i], poly[(i + 1) % n]))
+    for i in order:
+        new = poly[:i + 1] + [p] + poly[i + 1:]
+        new_area = abs(signed_area(new))
+        if (new_area <= old_area) if grow else (new_area >= old_area):
+            continue
+        # No other vertex may lie in the triangle (a, p, b): otherwise the triangle overlaps the
+        # polygon and the result would lose area there even though the total area grows.
+        a, b = poly[i], poly[(i + 1) % n]
+        tri = [a, p, b]
+        if any(point_in_polygon(q, tri) for k, q in enumerate(poly) if k != i and k != (i + 1) % n):
+            continue
+        if not polygon_problems(new):
+            return new
+    return None
+
 # ---------------------------------------------------------------------------
 # File read/write
 # ---------------------------------------------------------------------------
@@ -256,6 +289,9 @@ class AxisLimitGuard:
         self.profile = str(settings.get('profile') or 'default')
         self._load_geometry(limits)
         self.margin = rad(float(settings['margin_degrees']))
+        # Path of the active limits file (for refining and saving from the browser)
+        self.file: str | None = resolve_path(settings['file']) if settings.get('file') else None
+        self.refine_undo_stack: list[tuple[list[Point], list[list[Point]]]] = []
 
         self.lookahead = float(settings['lookahead_seconds'])
         if self.lookahead <= 0:
@@ -355,6 +391,92 @@ class AxisLimitGuard:
             return Msg('The mount is outside the area of profile {name} (by {d:.1f} degrees). '
                        'Only moves back into the allowed area are possible.', name=name, d=deg(-c))
         return None
+
+    # --- Refining the area from the browser -------------------------------
+
+    MIN_REFINE_STEP = rad(0.2)
+
+    def refine_preview(self, p: Point) -> dict[str, Any]:
+        '''
+        What adding the axis position p as a new boundary vertex would do.
+        Returns {'kind': 'outline'|'hole'|'inside'|'invalid', 'poly': [...], 'hole': index, 'msg': Msg}.
+        '''
+        for k, hole in enumerate(self.holes):
+            if point_in_polygon(p, hole):
+                new_hole = insert_vertex(hole, p, grow=False)
+                if new_hole is None:
+                    return {'kind': 'invalid', 'msg': Msg('Exclusion zone {k} cannot be shrunk here.', k=k + 1)}
+                holes = [list(h) for h in self.holes]
+                holes[k] = new_hole
+                err = self._refine_check(self.poly, holes)
+                if err:
+                    return {'kind': 'invalid', 'msg': err}
+                return {'kind': 'hole', 'hole': k, 'poly': new_hole, 'msg': Msg('shrinks exclusion zone {k}', k=k + 1)}
+        if point_in_polygon(p, self.poly):
+            return {'kind': 'inside', 'msg': Msg('already inside the outline (at most the safety margin blocks here)')}
+        if edge_distance(p, self.poly) < self.MIN_REFINE_STEP:
+            return {'kind': 'invalid', 'msg': Msg('too close to the current edge (below 0.2 degrees)')}
+        new_poly = insert_vertex(self.poly, p, grow=True)
+        if new_poly is None:
+            return {'kind': 'invalid', 'msg': Msg('no boundary edge where this point only enlarges the outline '
+                                                  '(the outline would cross itself or shrink elsewhere)')}
+        err = self._refine_check(new_poly, self.holes)
+        if err:
+            return {'kind': 'invalid', 'msg': err}
+        return {'kind': 'outline', 'poly': new_poly, 'msg': Msg('extends the outline')}
+
+    def _refine_check(self, poly: list[Point], holes: list[list[Point]]) -> Msg | None:
+        '''Problem with a refined outline and zones (as a message), or None if they are valid.'''
+        problems = polygon_problems(poly)
+        if problems:
+            return problems[0]
+        if not point_in_polygon(self.home, poly):
+            return Msg('The home position would lie outside the outline.')
+        problems = exclusion_problems(poly, holes, self.home)
+        return problems[0] if problems else None
+
+    def refine_add(self, p: Point) -> Msg:
+        '''
+        Add p as a boundary vertex (takes effect immediately, not yet saved). Returns what was
+        done, e.g. "extends the outline". Raises LimitError.
+        '''
+        prev = self.refine_preview(p)
+        if prev['kind'] not in ('outline', 'hole'):
+            raise LimitError(prev['msg'])
+        self.refine_undo_stack.append((list(self.poly), [list(h) for h in self.holes]))
+        if prev['kind'] == 'outline':
+            self.poly = prev['poly']
+        else:
+            holes = [list(h) for h in self.holes]
+            holes[prev['hole']] = prev['poly']
+            self.holes = holes
+        self.limited = False
+        what: Msg = prev['msg']
+        return what
+
+    def refine_undo(self) -> bool:
+        if not self.refine_undo_stack:
+            return False
+        self.poly, self.holes = self.refine_undo_stack.pop()
+        self.limited = False
+        return True
+
+    def refine_save(self) -> str:
+        '''Write the refined area to the active limits file; the previous file is kept as .bak.'''
+        if not self.file:
+            raise LimitError(Msg('No limits file is known.'))
+        if os.path.exists(self.file):
+            shutil.copy2(self.file, self.file + '.bak')
+        save_limits(self.file, self.mount.cpr, {1: self.home[0], 2: self.home[1]}, self.poly, self.holes)
+        self.refine_undo_stack = []
+        return self.file
+
+    def refine_discard(self) -> None:
+        '''Reload the active limits file (drops unsaved refinements).'''
+        if self.file:
+            self._load_geometry(load_limits(self.file))
+        self.refine_undo_stack = []
+        self.limited = False
 
     # --- Helper functions -------------------------------------------------
 
@@ -517,6 +639,12 @@ def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_p
                              protocol=telescope_protocol))
     limits = load_limits(resolve_path(settings['file']))
     return AxisLimitGuard(telescope, limits, settings)
+
+def profile_path(config_data: dict[str, Any], name: str) -> str:
+    settings = get_settings(config_data)
+    if settings is None or name not in settings['profiles']:
+        raise LimitError(Msg('Unknown profile: {name}', name=name))
+    return resolve_path(settings['profiles'][name])
 
 def load_profile(config_data: dict[str, Any], name: str) -> dict[str, Any]:
     settings = get_settings(config_data)

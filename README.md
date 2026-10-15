@@ -622,6 +622,14 @@ fill in the editor from it. `./gps_check.py` checks whether the modem delivers a
 Clicking on the map fills in the ground elevation from public elevation services (OpenTopoData
 EU-DEM, Open-Meteo); for landmarks add the height of the building.
 
+#### Refining the limits
+
+"Refine limits" in the Safe area card helps to move the taught edge outward where it was
+taught too conservatively: with the safe area disabled, drive the telescope carefully toward the
+real limit and accept the position as a new corner of the outline (or of an exclusion zone, which
+then gets smaller). A crosshair on the map and in the sky view shows where the telescope
+points. Points can be undone, saved (the previous file is kept as `.bak`) or discarded.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

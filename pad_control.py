@@ -12,6 +12,7 @@ Mapping (PS4 controller):
   Triangle        STOP (tracking and slewing)
   R1 / L1         next / previous aircraft (before alignment: aiming target)
   Options         cycle focal length for alignment points (vibrates 1/2/3 times)
+  Share           while refining the safe area: accept the current axis position as a new limit point
 
 The correction is applied in the camera image frame: "stick up" moves the mount so that
 the image always moves the same way, regardless of where the telescope points. If the
