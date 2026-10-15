@@ -257,7 +257,6 @@ def main() -> None:
                            f'{shlex.quote(PYTHON)} nexplane.py ' + ' '.join(shlex.quote(a) for a in nexplane_args))
     print()
     print(f'Done. The browser opens shortly (http://127.0.0.1:{web_port}/).')
-    print('Align there first: card "Control & alignment".')
     print('When NexPlane ends, the helper windows started here close automatically.')
 
 if __name__ == '__main__':

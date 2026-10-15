@@ -356,7 +356,7 @@ function msgText(m) {
   return lookup(m.t).replace(/\{(\w+)(?::[^}]*)?\}/g, (all, name) =>
     name in p ? (typeof p[name] === 'object' ? msgText(p[name]) : localNum(String(p[name]))) : all);
 }
-// Text written in this page: T('Side {side}', {side: 'A'}) gives the text in the selected language.
+// Text written in this page: T('Command not delivered: {error}', {error: 'timeout'}) gives the text in the selected language.
 const T = (template, params) => msgText({t: template, p: params || {}});
 // Static texts in the HTML (text nodes, title and placeholder attributes) are translated when the
 // language changes. The original of each node is remembered so the switch works both ways; text that

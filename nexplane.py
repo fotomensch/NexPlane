@@ -29,6 +29,7 @@ import rpc
 import skywatcher
 import sbs1
 import tracker
+import tracking_log
 import util
 
 from messages import Msg, Text, of_exception, to_json
@@ -202,8 +203,8 @@ def main() -> None:
 
     restart_location: str | None = None
     pad: gamepad.Gamepad | None = None
-    track_log: pad_control.TrackLog | None = None
-    telescope: Any = None
+    track_log: tracking_log.TrackLog | None = None
+    telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
         # Telescope control interface.
         try:
@@ -407,7 +408,7 @@ def main() -> None:
                                       bool(pad_settings['rumble']), pad_settings['device'])
                 padctl = pad_control.PadControl(pad_settings, pad)
             if config_data.get('track_log', True):
-                track_log = pad_control.TrackLog(os.path.join(config.main_config_dir(), 'logs'))
+                track_log = tracking_log.TrackLog(os.path.join(config.main_config_dir(), 'logs'))
         if manual is not None and not (args.landmark or args.alignment):
             if not rough_align():
                 notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft as aiming '

@@ -174,7 +174,7 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     parser.add_argument(
         '--serial-port', default=config_data['serial_port'],
         help='Which serial port to use (default: ' +
-             ('the first port it finds between /dev/ttyUSB0 and /dev/ttyUSB9.'
+             ('the first USB serial adapter it finds among /dev/ttyUSB*; cellular modems are skipped.'
               if config_data['serial_port'] == 'auto' else config_data['serial_port']) + ')')
 
     parser.add_argument(

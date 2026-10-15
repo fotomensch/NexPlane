@@ -11,26 +11,26 @@ Procedure:
      boundary points in order with "m". The points are connected into an
      outline in this order. Where the permitted range changes
      sharply, set more points.
-  5. Optional: keep-out zones. These are areas INSIDE the outline that the
+  5. Optional: exclusion zones. These are areas INSIDE the outline that the
      mount must not enter (e.g. where the rear of a long tube hits the
-     tripod or pier). "n" starts a keep-out zone, then drive along its boundary
+     tripod or pier). "n" starts an exclusion zone, then drive along its boundary
      in order with "m", "e" ends it.
   6. Save with "s", quit with "q".
 
 Profiles: for different setups (long tube / camera only) there is one file each
 in config.yaml under axis_limits.profiles. With --profile NAME that
 profile is taught or checked. With --edit an existing file is
-loaded, e.g. to add keep-out zones later.
+loaded, e.g. to add exclusion zones later.
 
 Keys:
   Arrow left/right    move axis 1 (RA)         while held down
   Arrow up/down       move axis 2 (Dec)        while held down
   Space               stop immediately
   + / -               change speed
-  m                   store current position as boundary point (outline or current keep-out zone)
+  m                   store current position as boundary point (outline or current exclusion zone)
   u                   discard last boundary point
-  n                   start new keep-out zone
-  e                   end keep-out zone, back to the outline
+  n                   start new exclusion zone
+  e                   end exclusion zone, back to the outline
   g                   save graphic of the outline as SVG file
   s                   save (also writes the graphic)
   q                   quit (motors are stopped)
@@ -126,7 +126,7 @@ class Teacher:
         self.home = dict(self.pos)
         self.boundary: list[tuple[float, float]] = []
         self.exclusions: list[list[tuple[float, float]]] = []
-        self.editing: int | None = None     # Index of the keep-out zone being edited, None = outline
+        self.editing: int | None = None     # Index of the exclusion zone being edited, None = outline
         self.preview_path = os.path.splitext(output)[0] + '_preview.svg'
         self.saved = True
         self.check_mode = False

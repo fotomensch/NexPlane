@@ -77,7 +77,7 @@ under a real sky.
 | 19 | Start script | `start_nexplane.py` | – | Bench |
 | 20 | Serial port auto-detection skips modems | `telescope_server.py`, `mount_check.py` | – | Bench |
 | 21 | Fewer position queries per tracking cycle | `eq_flip.py`, `tracker.py` | 4 | Sim |
-| 22 | Clear startup error, tracking and sync logs | `nexplane.py`, `pad_control.py` | – | Sim |
+| 22 | Clear startup error, tracking and sync logs | `nexplane.py`, `tracking_log.py` | – | Sim |
 | 23 | Refine limits from the browser | `axis_limits.py`, `nexplane.py`, `webgui.*` | 1, 3, 5 | Sim, bench |
 | 24 | Gamepad moves the map crosshair north/east | `pad_control.py`, `nexplane.py`, `webgui.*` | 15, 23 | Sim |
 | 25 | Refuse alignment targets near the celestial pole | `eq_flip.py`, `nexplane.py` | 4, 7 | Sim |

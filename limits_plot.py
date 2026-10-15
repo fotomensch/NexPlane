@@ -66,7 +66,7 @@ def render_ascii(home: Point, boundary: list[Point], current: Point, width: int,
     Returns height lines with at most width characters each.
     Characters: digits/letters = boundary points, H = home, @ = current position,
     . = boundary, : = closing line to point 1, ! = edge that crosses another one,
-    x = boundary of a keep-out zone.
+    x = boundary of an exclusion zone.
     '''
     width = max(width, 20)
     height = max(height, 6)
@@ -202,7 +202,7 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
                      'crossing': 'stroke="#d0021b" stroke-width="3.5"'}[kinds[i]]
             out.append(f'<line x1="{sx(a[0]):.1f}" y1="{sy(a[1]):.1f}" x2="{sx(b[0]):.1f}" y2="{sy(b[1]):.1f}" {style}/>')
 
-    # Keep-out zones
+    # Exclusion zones
     for k, zone in enumerate(rel_x, start=1):
         if not zone:
             continue

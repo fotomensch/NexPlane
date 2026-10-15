@@ -159,7 +159,7 @@ def clearance(p: Point, poly: list[Point], margin: float,
               holes: 'list[list[Point]] | tuple[()]' = ()) -> float:
     '''
     How far p lies inside the permitted area (outline minus safety margin,
-    and also outside all keep-out zones including safety margin).
+    and also outside all exclusion zones including safety margin).
     >= 0: permitted, < 0: not permitted.
     '''
     d = edge_distance(p, poly)
@@ -172,7 +172,7 @@ def clearance(p: Point, poly: list[Point], margin: float,
     return c
 
 def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], home: Point) -> list[Msg]:
-    '''Check of the keep-out zones (empty = OK).'''
+    '''Check of the exclusion zones (empty = OK).'''
     problems = []
     for k, zone in enumerate(exclusions, start=1):
         for prob in polygon_problems(zone):
@@ -191,7 +191,7 @@ def insert_vertex(poly: list[Point], p: Point, grow: bool = True) -> list[Point]
     Insert p as a new vertex on the nearest edge that keeps the polygon simple and
     changes its area in the requested direction: grow=True only adds the triangle
     (a, p, b) (expanding the outline), grow=False only cuts it away (shrinking a
-    keep-out zone). An edge for which p lies on the wrong side (e.g. in a concave
+    exclusion zone). An edge for which p lies on the wrong side (e.g. in a concave
     pocket of the outline) would otherwise remove area elsewhere. Returns None if
     no edge works.
     '''
@@ -222,7 +222,7 @@ def save_limits(path: str,
                 home_rad: dict[int, float],
                 boundary_rad: list[Point],
                 exclusions_rad: list[list[Point]] | None = None) -> dict[str, Any]:
-    '''Saves home position, outline and keep-out zones.'''
+    '''Saves home position, outline and exclusion zones.'''
     exclusions_rad = [z for z in (exclusions_rad or []) if z]
     problems = polygon_problems(boundary_rad)
     if problems:
