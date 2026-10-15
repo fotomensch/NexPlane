@@ -228,6 +228,12 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
           <span id="o-l2">Elevation</span><span id="o-el">0,00°</span>
         </div>
       </div>
+      <div class="row" id="corr-btns" style="margin-top:8px;display:none;gap:6px">
+        <button class="btn" id="btn-corr-save" style="flex:1" title="Aircraft is centred: accept as sync point">Accept (sync point)</button>
+        <button class="btn" id="btn-model-pop" title="Delete last sync point">Delete last</button>
+      </div>
+      <div id="model-status" style="margin-top:6px;font-size:13px"></div>
+      <div id="model-points" style="margin-top:4px;font-size:12px"></div>
       <div class="hint" style="margin-top:6px" id="corr-hint">Keys: W/A/S/D 0.1° each, with Shift 0.5°, Q resets</div>
     </div>
     <div class="card">
@@ -501,7 +507,37 @@ function updatePanel() {
     $('o-l1').textContent = T('RA axis'); $('o-l2').textContent = T('Dec axis');
     $('o-az').textContent = fmt(C.ra || 0, 2) + '°';
     $('o-el').textContent = fmt(C.dec || 0, 2) + '°';
-    $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft.');
+    $('corr-btns').style.display = 'flex';
+    const Mo = C.model || {};
+    if (Mo.points != null) {
+      let t = `${esc(T('Sync points:'))} <b>${Mo.points}</b>`;
+      if (Mo.active) {
+        t += ` · <b>${esc(T('Polar error model active'))}</b>, ` + esc(T('residual {rms}°', {rms: fmt(Mo.rms, 2)}));
+        if (Mo.polar_high != null) {
+          t += '<br>' + esc(T('Polar axis: {h:.1f}° too {updown}, {e:.1f}° too far {eastwest}.', {
+            h: fmt(Math.abs(Mo.polar_high), 1), updown: {t: Mo.polar_high > 0 ? 'high' : 'low'},
+            e: fmt(Math.abs(Mo.polar_east), 1), eastwest: {t: Mo.polar_east > 0 ? 'east' : 'west'}}));
+        }
+        if (Mo.cone != null && Math.abs(Mo.cone) >= 0.05) t += ' · ' + esc(T('cone error {cone}°', {cone: fmt(Mo.cone, 2)}));
+      } else if (Mo.points > 0) {
+        t += ` · <span class="hint">${esc(T('zero point only; from 3 points in different directions the polar misalignment is included'))}</span>`;
+      } else {
+        t += ` <span class="hint">${esc(T('(align first)'))}</span>`;
+      }
+      $('model-status').innerHTML = t;
+      const L = Mo.list || [];
+      const pkey = LANG + JSON.stringify(L.map(p => [p.name, p.res == null ? null : Math.round(p.res * 100)]));
+      if ($('model-points').dataset.key !== pkey) {
+        $('model-points').dataset.key = pkey;
+        $('model-points').innerHTML = L.length ? '<table style="width:100%"><tbody>' + L.map((p, i) => {
+          const bad = p.res != null && p.res > 0.5;
+          return `<tr><td>${i + 1}</td><td>${esc(p.name || '–')}</td>` +
+                 `<td class="${bad ? 'warn' : ''}" title="${esc(T('Deviation from the model'))}">${p.res == null ? '' : fmt(p.res, 2) + '°'}</td>` +
+                 `<td style="text-align:right">${L.length > 1 ? `<button class="btn" data-delpt="${i}" title="${esc(T('Delete point'))}" style="padding:0 6px">✕</button>` : ''}</td></tr>`;
+        }).join('') + '</tbody></table>' + (L.some(p => p.res != null && p.res > 0.5) ? `<span class="warn">${esc(T('Red: poor fit (> 0.5°) – centred wrongly?'))}</span>` : '') : '';
+      }
+    }
+    $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft. When the tracked aircraft is centred, “Accept” turns it into a sync point.');
   } else {
     $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
     $('o-el').textContent = fmt(S.offsets.el, 2) + '°';
@@ -632,6 +668,14 @@ $('btn-stop').onclick = () => api('stop');
 $('btn-stop2').onclick = () => api('stop');
 $('btn-flip').onclick = () => { if (confirm(T('Test a side change? The mount will rotate the RA axis by about 180°.'))) api('flip_test'); };
 $('btn-reset').onclick = () => api('offset_reset');
+const confirmSyncPoint = () => { if (confirm(T('Is the tracked aircraft centred in the image now? Then it is accepted as a sync point.'))) api('corr_save'); };
+$('btn-corr-save').onclick = confirmSyncPoint;
+$('btn-model-pop').onclick = () => { if (confirm(T('Delete the last sync point?'))) api('model_pop'); };
+$('model-points').addEventListener('click', e => {
+  const b = e.target.closest('[data-delpt]'); if (!b) return;
+  const i = Number(b.dataset.delpt);
+  if (confirm(T('Delete sync point {n}?', {n: i + 1}))) api('model_pop', {index: i});
+});
 document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
   const [x, y] = b.dataset.off.split(',').map(Number); const s = $('opt-big').checked ? 0.5 : 0.1;
   api('offset', {daz: x * s, del: y * s});

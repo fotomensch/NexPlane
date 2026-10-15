@@ -254,6 +254,8 @@ def main() -> None:
                 telescope, ra_cal, dec_cal, limit_guard, notify=notify,
                 auto_flip=bool(config_data.get('meridian_flip', True)),
                 max_rate_deg_s=float(config_data.get('max_slew_degrees_per_second', 5.0)))
+            # Sidereal time in NexPlane's coordinate system (for the polar misalignment model)
+            pointing.model.set_lst(reach_map.local_sidereal_time(observatory_location))
             if limit_guard is None:
                 notify(Msg('No safe area configured: the automatic meridian flip is off.'))
             else:
@@ -309,6 +311,12 @@ def main() -> None:
                 f.write('# Telescope alignment data saved on ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
                 yaml.dump({'mount_mode': 'eq', 'calibration': {
                     'ra': float(util.wrap_rad(new_ra_cal, 0)), 'dec': float(util.wrap_rad(new_dec_cal, 0))}}, f)
+                if pointing is not None and pointing.model.active:
+                    # For information only: the model applies to this setup and this program run.
+                    st = pointing.model.status(obs_lat)
+                    f.write(f'# Pointing model: {st["points"]} points, residual {st["rms"]:.2f} degrees, '
+                            f'polar axis {st["polar_high"]:+.2f} degrees high, {st["polar_east"]:+.2f} degrees east\n')
+
         # Correction in the camera image (EQ mount, browser GUI).
         if args.web and pointing is not None:
             gui_iface.enable_axis_correction()
@@ -322,6 +330,105 @@ def main() -> None:
                 dec_raw_now = pointing.last_raw[1] if pointing.last_raw is not None else telescope.get_ra_dec()[1]
                 d = (dec_raw_now - home_dec_raw + math.pi / 2) if home_dec_raw is not None else 0.0
             return pointing.image_to_axes(dx, dy, d)
+
+        def plane_info(hex_id: str | None) -> tuple[str, float | None, float | None]:
+            '''Callsign and current (az, el) of an aircraft; empty values if it is unknown.'''
+            if hex_id is None or hex_id not in planes:
+                return '', None, None
+            try:
+                ex = planes[hex_id].extrapolate(time.monotonic_ns())
+                return ((planes[hex_id].callsign.value or '').strip(),
+                        float(unwrap(ex.az.value)), float(unwrap(ex.el.value)))
+            except Exception:
+                return '', None, None
+
+        obs_lat = float(observatory_location.lat.to_value('rad'))
+
+        def model_text() -> Text:
+            '''Short description of the active pointing model, or an empty string.'''
+            assert pointing is not None
+            st = pointing.model.status(obs_lat)
+            if not st['active']:
+                return ''
+            txt = Msg('Polar error model active, residual {rms:.2f}°.', rms=st['rms'])
+            if st['polar_high'] is not None:
+                h, e = st['polar_high'], st['polar_east']
+                txt += Msg('Polar axis: {h:.1f}° too {updown}, {e:.1f}° too far {eastwest}.',
+                           h=abs(h), updown=Msg('high') if h > 0 else Msg('low'),
+                           e=abs(e), eastwest=Msg('east') if e > 0 else Msg('west'))
+            return txt
+
+        def save_correction(hex_id: str | None) -> bool:
+            '''
+            "Accept" button: with a tracked plane, a sync point is recorded and the model
+            is refitted (with polar misalignment once there are 3 well-distributed points). Without
+            a target, the correction is only applied to the alignment as an offset.
+            '''
+            assert pointing is not None
+            raw_ra, raw_dec = telescope.get_ra_dec()
+            corr = (pointing.corr_ra, pointing.corr_dec)
+            callsign, p_az, p_el = plane_info(hex_id)
+            res: dict[str, Any] = {}
+            msg: Msg
+            first = not pointing.model.points
+            if first and p_az is not None and p_el is not None:
+                # First point of this setup (alignment loaded from a file): do a full alignment on it
+                ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
+                new_ra_cal, new_dec_cal, side = eq_flip.calibrate(ra_t, dec_t, raw_ra, raw_dec, home_dec_raw)
+                pointing.set_calibration(new_ra_cal, new_dec_cal)
+                pointing.start_session(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '')
+                gui_iface.set_aligned(Msg('aircraft {name} (side {side})', name=callsign or hex_id, side=side))
+                msg = Msg('Aligned on {name} (point 1, side {side}). NexPlane now tracks by itself. Centre further '
+                          'aircraft in other directions and press “Accept (sync point)”; from 3 points on, the polar '
+                          'misalignment is included.', name=callsign or hex_id, side=side)
+            elif p_az is not None and p_el is not None:
+                ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
+                res = pointing.sync(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '')
+                new_ra_cal, new_dec_cal = pointing.ra_cal, pointing.dec_cal
+                n = len(pointing.model.points)
+                msg = Msg('Point {n} accepted ({name}).', n=n, name=callsign or hex_id)
+                if res.get('full'):
+                    msg += model_text()
+                else:
+                    need = max(0, pointing.model.MIN_POINTS - n)
+                    msg += Msg('Zero point adjusted.')
+                    if need:
+                        msg += Msg('{need} more point(s) in a clearly different direction, then the polar '
+                                   'misalignment is included.', need=need)
+                    elif res.get('hint'):
+                        msg += res['hint']
+                    if pointing.model.active:
+                        msg += Msg('(The previous polar error model stays active.)')
+                if res.get('warn'):
+                    msg += Msg('WARNING: {warning}', warning=res['warn'])
+            else:
+                new_ra_cal, new_dec_cal = pointing.absorb_correction()
+                msg = Msg('Correction accepted as an offset (no aircraft tracked, so no sync point for the model; '
+                          'RA axis {ra:+.2f}°, Dec axis {dec:+.2f}°).', ra=math.degrees(corr[0]), dec=math.degrees(corr[1]))
+            try:
+                write_alignment(new_ra_cal, new_dec_cal)
+            except OSError as e:
+                notify(Msg('The alignment could not be saved: {error}', error=str(e)))
+            notify(msg)
+            request_reach()
+            return True
+
+        def remove_last_point(index: int | None = None) -> bool:
+            '''Delete a sync point (default: the last one) and refit the model.'''
+            assert pointing is not None
+            n = len(pointing.model.points)
+            idx = n - 1 if index is None else index
+            name = str(pointing.model.points[idx].get('name', '')) if 0 <= idx < n else ''
+            res = pointing.remove_point(idx)
+            if res is None:
+                notify(Msg('No sync point to delete (at least one point remains).'))
+                return False
+            write_alignment(pointing.ra_cal, pointing.dec_cal)
+            notify(Msg('Sync point {n}{name} deleted, {left} point(s) left.', n=idx + 1,
+                       name=f' ({name})' if name else '', left=len(pointing.model.points))
+                   + (model_text() or Msg('Zero point alignment only.')))
+            request_reach()
+            return True
 
         # Main loop
         warn_comm_failure = False
@@ -428,9 +535,14 @@ def main() -> None:
                         elif kind == 'reset':
                             pointing.reset_correction()
                             notify(Msg('Correction set to 0.'))
+                        elif kind == 'save':
+                            save_correction(tracked_plane_hex_id)
+                        elif kind == 'pop':
+                            remove_last_point(int(a) if a >= 0 else None)
                 if args.web and pointing is not None:
                     gui_iface.set_corr_info(
-                        {'ra': math.degrees(pointing.corr_ra), 'dec': math.degrees(pointing.corr_dec)})
+                        {'ra': math.degrees(pointing.corr_ra), 'dec': math.degrees(pointing.corr_dec),
+                         'model': pointing.model.status(obs_lat)})
 
                 align_request = gui_iface.pop_align_request() if manual is not None else None
                 jog = gui_iface.get_jog() if manual is not None else None
@@ -449,6 +561,8 @@ def main() -> None:
                         raw_ra, raw_dec = telescope.get_ra_dec()
                         new_ra_cal, new_dec_cal, align_side = eq_flip.calibrate(real_ra, real_dec, raw_ra, raw_dec, home_dec_raw)
                         pointing.set_calibration(new_ra_cal, new_dec_cal)
+                        pointing.start_session(real_ra, real_dec, raw_ra, raw_dec,
+                                               align_request[4:] if align_request.startswith('sky:') else align_request)
                         write_alignment(new_ra_cal, new_dec_cal)
                         align_name = align_request[4:] if align_request.startswith('sky:') else align_request
                         gui_iface.set_aligned(Msg('{name} (side {side})', name=align_name, side=align_side))

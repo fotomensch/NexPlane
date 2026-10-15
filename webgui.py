@@ -573,6 +573,15 @@ class WebGui:
                 self.alt_offset = 0.0
                 if self.axis_correction:
                     self.corr_queue.append(('reset', 0.0, 0.0))
+            elif name == 'corr_save':
+                if not self.axis_correction:
+                    return _error(Msg('Only available in EQ mode'))
+                self.corr_queue.append(('save', 0.0, 0.0))
+            elif name == 'model_pop':
+                if not self.axis_correction:
+                    return _error(Msg('Only available in EQ mode'))
+                idx = data.get('index')
+                self.corr_queue.append(('pop', float(idx) if isinstance(idx, int) and idx >= 0 else -1.0, 0.0))
             elif name == 'gain':
                 which = data.get('which')
                 delta = float(data.get('delta', 0.0))

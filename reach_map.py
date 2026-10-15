@@ -35,6 +35,14 @@ def _ha_dec(az: float, el: float, lat: float) -> tuple[float, float]:
                     math.cos(lat) * math.sin(el) - math.sin(lat) * math.cos(el) * math.cos(az))
     return ha, dec
 
+def local_sidereal_time(observatory: Any) -> float:
+    '''Sidereal time matching util.altaz_to_radec (same coordinate system as the targets).'''
+    lat = float(observatory.lat.to_value('rad'))
+    ref_az, ref_el = math.pi, math.radians(45.0)
+    ref_ra, _ = util.altaz_to_radec(ref_el, ref_az, observatory, util.get_current_time())
+    ref_ha, _ = _ha_dec(ref_az, ref_el, lat)
+    return float(ref_ra + ref_ha)
+
 def compute(pointing: Any, observatory: Any, ra_raw_now: float, dec_raw_now: float,
             az_step_deg: float = AZ_STEP_DEG, el_step_deg: float = EL_STEP_DEG) -> dict[str, Any]:
     '''

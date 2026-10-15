@@ -26,6 +26,7 @@ import time
 from typing import Any, Callable
 
 import axis_limits
+import pointing_model
 
 from messages import Msg, Text
 
@@ -138,6 +139,8 @@ class EqPointing:
         # shift of the calibration and therefore applies to all targets and on both sides.
         self.corr_ra = 0.0
         self.corr_dec = 0.0
+        # Pointing model with polar misalignment (per setup, see pointing_model.py)
+        self.model = pointing_model.Model()
         self.side: str | None = None       # selected side for the current target
         self.side_since = 0.0
         self.last_scope_side = SIDE_A
@@ -152,6 +155,9 @@ class EqPointing:
         '''Raw axis position -> (ra, dec, side) on the sky.'''
         d = _wrap(dec_raw - self.corr_dec + self.dec_cal, -math.pi)     # -180 .. 180 degrees
         ra = ra_raw - self.corr_ra + self.ra_cal
+        if self.model.active:
+            ra_t, dec_t = self.model.from_raw(ra, d)
+            return _wrap(ra_t), dec_t, (SIDE_B if abs(d) > math.pi / 2 else SIDE_A)
         if d > math.pi / 2:
             return _wrap(ra + math.pi), math.pi - d, SIDE_B
         if d < -math.pi / 2:
@@ -204,12 +210,13 @@ class EqPointing:
             _, dec_raw_now = self.telescope.get_ra_dec()
         out = {}
         for side in (SIDE_A, SIDE_B):
+            ra_s, dec_s = self.model.to_mount(ra_t, dec_t, side == SIDE_B)
             if side == SIDE_A:
-                ra_raw = ra_t - self.ra_cal + self.corr_ra
-                dec_raw = dec_t - self.dec_cal + self.corr_dec
+                ra_raw = ra_s - self.ra_cal + self.corr_ra
+                dec_raw = dec_s - self.dec_cal + self.corr_dec
             else:
-                ra_raw = ra_t + math.pi - self.ra_cal + self.corr_ra
-                dec_raw = math.pi - dec_t - self.dec_cal + self.corr_dec
+                ra_raw = ra_s + math.pi - self.ra_cal + self.corr_ra
+                dec_raw = math.pi - dec_s - self.dec_cal + self.corr_dec
             # Calibration values may be stored shifted by full revolutions
             # (align.py stores 0..360 degrees). Therefore place the Dec axis at the nearest
             # equivalent position.
@@ -242,7 +249,46 @@ class EqPointing:
         self.dec_cal = dec_cal
         self.corr_ra = 0.0
         self.corr_dec = 0.0
+        self.model.set_params(0.0, 0.0, 0.0, False)
+        self.model.points = []
+        self.model.residuals = []
+        self.model.rms = 0.0
         self.reset()
+
+    def start_session(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float,
+                      name: str = '') -> None:
+        '''After alignment: the alignment point is the first point of the model.'''
+        self.model.points = [self._point(ra_t, dec_t, ra_raw, dec_raw, name)]
+
+    def _point(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float, name: str) -> dict[str, Any]:
+        return {'t': time.time(), 'ra_raw': ra_raw, 'dec_raw': dec_raw, 'ra': ra_t, 'dec': dec_t, 'name': name}
+
+    def sync(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float, name: str = '') -> dict[str, Any]:
+        '''
+        The telescope points (after correction) exactly at (ra_t, dec_t): record point, refit
+        model, reset correction to 0. The position does not change (except for the model residual).
+        '''
+        self.model.points.append(self._point(ra_t, dec_t, ra_raw, dec_raw, name))
+        res = self.model.fit(self.ra_cal, self.dec_cal)
+        self.ra_cal, self.dec_cal = res['ra_cal'], res['dec_cal']
+        self.corr_ra = 0.0
+        self.corr_dec = 0.0
+        return res
+
+    def remove_last_point(self) -> dict[str, Any] | None:
+        '''Discard the last alignment point and refit (at least one point remains).'''
+        return self.remove_point(len(self.model.points) - 1)
+
+    def remove_point(self, index: int) -> dict[str, Any] | None:
+        '''Discard alignment point index (0 = first) and refit (at least one point remains).'''
+        if len(self.model.points) <= 1 or not 0 <= index < len(self.model.points):
+            return None
+        self.model.points.pop(index)
+        if len(self.model.points) < self.model.MIN_POINTS:
+            self.model.set_params(0.0, 0.0, 0.0, False)
+        res = self.model.fit(self.ra_cal, self.dec_cal)
+        self.ra_cal, self.dec_cal = res['ra_cal'], res['dec_cal']
+        return res
 
     # ------------------------------------------------------------------
     # Correction (keyboard, browser)
@@ -272,6 +318,14 @@ class EqPointing:
     def reset_correction(self) -> None:
         self.corr_ra = 0.0
         self.corr_dec = 0.0
+
+    def absorb_correction(self) -> tuple[float, float]:
+        '''Apply the correction to the calibration. Returns the new calibration (ra_cal, dec_cal).'''
+        self.ra_cal -= self.corr_ra
+        self.dec_cal -= self.corr_dec
+        self.corr_ra = 0.0
+        self.corr_dec = 0.0
+        return self.ra_cal, self.dec_cal
 
     def reachable(self, ra_t: float, dec_t: float, side: str) -> bool | None:
         '''Is the target within the safe area on the given side? None = unknown (no limits).'''

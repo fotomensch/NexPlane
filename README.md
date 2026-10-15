@@ -553,6 +553,14 @@ Correction card) move the target in the camera image instead of in azimuth/eleva
 way wherever the telescope points and on both pier sides. The correction is kept for all
 aircraft.
 
+#### Sync points and pointing model
+
+When the tracked aircraft is centred, "Accept (sync point)" stores where the mount points and
+where the aircraft really is. NexPlane then refits its alignment; from three points in clearly
+different directions it also fits the polar axis misalignment and shows it, e.g. "0.8° too
+low, 1.1° too far east", which helps adjusting the mount. Points that fit badly are marked and
+can be deleted.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
