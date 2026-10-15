@@ -515,6 +515,9 @@ web pages cannot control the mount. `web_gui: true` in `config.yaml` makes `--we
 The page can be switched between English and German (selector in the header; the default
 follows the browser). Translations are in `webgui_static/i18n_de.js`.
 
+In equatorial mode the header shows the pier side, and "Test side change" in the Meridian flip
+card holds the current direction and drives to it on the other side of the pole.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

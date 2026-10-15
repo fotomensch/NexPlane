@@ -10,7 +10,8 @@ Using the raw axis positions directly as RA/Dec is only correct on side A. This 
   - determines both axis positions for a target (and for RA the most favorable
     revolution) and checks them against the taught safe area,
   - stays on the current side as long as the target is reachable there, and
-    otherwise switches to the other side (automatic flip).
+    otherwise switches to the other side (automatic flip),
+  - can drive to a fixed point on the respective other side for testing.
 
 Model (NexPlane convention): ra_raw, dec_raw = telescope.get_ra_dec(),
 d = dec_raw + dec_cal. For d <= 90 degrees, side A applies with dec = d and
@@ -193,6 +194,13 @@ class EqPointing:
         self.dec_cal = dec_cal
         self.reset()
 
+    def reachable(self, ra_t: float, dec_t: float, side: str) -> bool | None:
+        '''Is the target within the safe area on the given side? None = unknown (no limits).'''
+        if self.guard is None:
+            return None
+        ra_raw_now, dec_raw_now = self.telescope.get_ra_dec()
+        return self.candidates(ra_t, dec_t, ra_raw_now, dec_raw_now)[side].feasible
+
     def reset(self) -> None:
         '''Call on target change or stop.'''
         self.side = None
@@ -224,13 +232,19 @@ class EqPointing:
         other = other_side(current)
         return other if score[other] > score[current] else current
 
-    def choose(self, cands: dict[str, Candidate], ra_raw_now: float = 0.0,
+    def choose(self, cands: dict[str, Candidate], forced_side: str | None,
+               ra_raw_now: float = 0.0,
                future: Callable[[float], tuple[float, float]] | None = None) -> Candidate:
         '''
-        Pick the candidate to drive to: for a new target the side where it stays reachable longest;
-        while tracking, flip only when the current side becomes unreachable.
+        Pick the candidate to drive to: forced_side if given; for a new target the side where it stays
+        reachable longest; while tracking, flip only when the current side becomes unreachable.
         '''
         now = time.monotonic()
+        if forced_side is not None:
+            if self.side != forced_side:
+                self.side = forced_side
+                self.side_since = now
+            return cands[forced_side]
         if self.side is None:
             # New target: choose side by reachability now and in the near future.
             self.side = self._initial_side(cands, ra_raw_now, future)
@@ -250,7 +264,7 @@ class EqPointing:
                 return other
         return current
 
-    def command(self, tracker: Any, ra_t: float, dec_t: float,
+    def command(self, tracker: Any, ra_t: float, dec_t: float, forced_side: str | None = None,
                 future: Callable[[float], tuple[float, float]] | None = None) -> Candidate:
         '''
         Drive the mount to the target (ra_t, dec_t). future(dt) optionally returns the
@@ -265,6 +279,6 @@ class EqPointing:
             ra_raw_now, dec_raw_now = self.telescope.get_ra_dec()
             self.last_raw = (ra_raw_now, dec_raw_now)
             self.last_raw_t = time.monotonic()
-        cand = self.choose(self.candidates(ra_t, dec_t, ra_raw_now, dec_raw_now), ra_raw_now, future)
+        cand = self.choose(self.candidates(ra_t, dec_t, ra_raw_now, dec_raw_now), forced_side, ra_raw_now, future)
         tracker.go_raw(cand.ra_raw, cand.dec_raw, self.max_rate, (ra_raw_now, dec_raw_now))
         return cand

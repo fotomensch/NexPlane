@@ -82,6 +82,10 @@ class WebGui:
 
         # Set by the GUI
         self.tracked_plane: str | None = None
+        self.fixed_target: dict[str, Any] | None = None   # {'az','el' (rad), 'side'} for the pier-side flip test
+        self.scope_side: str | None = None
+        self.target_side: str | None = None
+        self.auto_flip = False
         self.azm_offset = 0.0
         self.alt_offset = 0.0
         self.kp, self.ki, self.kd = kp, ki, kd
@@ -143,6 +147,23 @@ class WebGui:
         self.exit_if_dead()
         with self.lock:
             self.tracked_plane = None
+            self.fixed_target = None
+
+    def get_fixed_target(self) -> dict[str, Any] | None:
+        self.exit_if_dead()
+        with self.lock:
+            return dict(self.fixed_target) if self.fixed_target is not None else None
+
+    def set_fixed_side(self, side: str) -> None:
+        with self.lock:
+            if self.fixed_target is not None:
+                self.fixed_target['side'] = side
+
+    def update_side(self, scope_side: str, target_side: str | None, auto_flip: bool) -> None:
+        with self.lock:
+            self.scope_side = scope_side
+            self.target_side = target_side
+            self.auto_flip = auto_flip
 
     def get_gains(self) -> tuple[float, float, float, int]:
         self.exit_if_dead()
@@ -207,6 +228,11 @@ class WebGui:
                 'gains': {'kp': self.kp, 'ki': self.ki, 'kd': self.kd},
                 'comm_failure': self.comm_failure,
                 'messages': [{'t': t, 'text': m} for t, m in self.messages],
+                'scope_side': self.scope_side,
+                'target_side': self.target_side,
+                'auto_flip': self.auto_flip,
+                'fixed_target': ({'az': _deg(self.fixed_target['az']), 'el': _deg(self.fixed_target['el']),
+                                  'side': self.fixed_target['side']} if self.fixed_target else None),
             }
 
         now_ns = time.monotonic_ns()
@@ -292,10 +318,22 @@ class WebGui:
                 if not isinstance(hex_id, str) or hex_id not in self.planes:
                     return _error(Msg('Unknown target'))
                 self.tracked_plane = hex_id
+                self.fixed_target = None
                 self.azm_offset = 0.0
                 self.alt_offset = 0.0
             elif name == 'stop':
                 self.tracked_plane = None
+                self.fixed_target = None
+            elif name == 'flip_test':
+                if self.telescope_azm_alt is None or self.mount_mode != 'eq':
+                    return _error(Msg('Side change only in EQ mode with a known telescope position'))
+                az, el = self.telescope_azm_alt
+                if el < 5 / 180 * math.pi:
+                    return _error(Msg('The telescope points too low (below 5 degrees) for the test'))
+                self.tracked_plane = None
+                self.fixed_target = {'az': az, 'el': el, 'side': None}
+                self.azm_offset = 0.0
+                self.alt_offset = 0.0
             elif name == 'offset':
                 daz = float(data.get('daz', 0.0))
                 dele = float(data.get('del', 0.0))

@@ -259,13 +259,17 @@ def main() -> None:
                 gui_sun_moon.update_positions(sun_azm_alt=unwrap(sun.az_el()),
                                               moon_azm_alt=unwrap(moon.az_el()))
                 gui_telescope.update_telescope_location(scope_azm_alt)
+                if pointing is not None and hasattr(gui_telescope, 'update_side'):
+                    gui_telescope.update_side(pointing.last_scope_side, pointing.side, pointing.auto_flip and limit_guard is not None)
                 gui_airplanes.update_planes(planes)
 
                 # Receive new user inputs from the GUI.
                 tracked_plane_hex_id = gui_airplanes.get_tracked_plane()
-                if tracked_plane_hex_id != last_target_key and pointing is not None:
+                fixed_target = gui_airplanes.get_fixed_target() if hasattr(gui_airplanes, 'get_fixed_target') else None
+                target_key = 'fixed' if fixed_target is not None else tracked_plane_hex_id
+                if target_key != last_target_key and pointing is not None:
                     pointing.reset()
-                last_target_key = tracked_plane_hex_id
+                last_target_key = target_key
                 az_offset, el_offset = gui_offset_reader.get_offsets()
                 kp, ki, kd, gain_changes = gui_gain_reader.get_gains()
 
@@ -281,6 +285,24 @@ def main() -> None:
                     target_tracker.stop()
                     gui_airplanes.stop_tracking()
                     gui_offset_reader.reset_offsets()
+                elif fixed_target is not None and pointing is not None:
+                    # Fixed point (pier-side flip test from the browser GUI).
+                    fixed_ra, fixed_dec = util.altaz_to_radec(
+                        fixed_target['el'] + el_offset, fixed_target['az'] + az_offset,
+                        observatory_location, util.get_current_time())
+                    if fixed_target['side'] is None:
+                        new_side = eq_flip.other_side(pointing.last_scope_side)
+                        if pointing.reachable(fixed_ra, fixed_dec, new_side) is False:
+                            notify(Msg('Side change test not possible: this direction lies outside the safe area on '
+                                       'side {side}. Point the telescope elsewhere, e.g. further east or west, and try '
+                                       'again.', side=new_side))
+                            target_tracker.stop()
+                            gui_airplanes.stop_tracking()
+                            continue
+                        fixed_target['side'] = new_side
+                        gui_airplanes.set_fixed_side(new_side)
+                        notify(Msg('Side change test: the point is approached on side {side}.', side=new_side))
+                    pointing.command(target_tracker, fixed_ra, fixed_dec, forced_side=fixed_target['side'])
                 elif tracked_plane_hex_id is None:
                     # There is no airplane to track, so stop the tracker.
                     target_tracker.stop()

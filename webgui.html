@@ -96,6 +96,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
   </div>
   <span class="pill">Telescope <b id="h-scope">–</b></span>
   <span class="pill">Target <b id="h-target">none</b></span>
+  <span class="pill" id="h-side" title="Side A: as during alignment. Side B: after a meridian flip."></span>
   <span class="pill" id="h-conn">connecting …</span>
   <span class="spacer"></span>
   <label class="chk"><input type="checkbox" id="opt-mirror"> Sky like a map (east on the right)</label>
@@ -113,6 +114,16 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
     <div class="card" id="target-card">
       <h2>Tracking</h2>
       <div id="target-none" class="hint">No target. Click an aircraft on the map, in the sky view or in the list.</div>
+      <div id="fixed-info" style="display:none">
+        <div class="big">Side change test</div>
+        <div class="kv" style="margin:6px 0 8px">
+          <span>Fixed point</span><span id="f-pos"></span>
+          <span>Target side</span><span id="f-side"></span>
+          <span>Telescope offset</span><span id="f-off"></span>
+        </div>
+        <div class="hint" style="margin-bottom:8px">After the change the telescope must point at the same spot as before.</div>
+        <button class="btn danger" id="btn-stop2" style="width:100%">End test (Esc)</button>
+      </div>
       <div id="target-info" style="display:none">
         <div class="big" id="t-name"></div>
         <div class="kv" style="margin:6px 0 8px">
@@ -127,6 +138,15 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
         <div class="row" id="t-links" style="margin-bottom:8px"></div>
         <button class="btn danger" id="btn-stop" style="width:100%">Stop tracking (Esc)</button>
       </div>
+    </div>
+    <div class="card" id="flip-card" style="display:none">
+      <h2>Meridian flip</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Telescope on</span><span id="fl-side">–</span>
+        <span>Automatic</span><span id="fl-auto">–</span>
+      </div>
+      <button class="btn" id="btn-flip" style="width:100%">Test side change</button>
+      <div class="hint" style="margin-top:6px">Keeps the current pointing direction and moves to it on the other side of the pole. Point the telescope at an easily recognisable spot first.</div>
     </div>
     <div class="card">
       <h2>Correction</h2>
@@ -314,8 +334,24 @@ function updatePanel() {
   $('banner').classList.toggle('show', !!S.comm_failure);
   $('h-scope').textContent = S.telescope ? `Az ${fmt(S.telescope.az)}°  El ${fmt(S.telescope.el)}°` : '–';
   const t = S.planes.find(p => p.hex === S.tracked);
-  $('h-target').textContent = t ? label(t) : T('none');
-  $('target-none').style.display = t ? 'none' : '';
+  const fx = S.fixed_target;
+  $('h-target').textContent = t ? label(t) : fx ? T('fixed point') : T('none');
+  $('target-none').style.display = t || fx ? 'none' : '';
+  $('fixed-info').style.display = fx ? '' : 'none';
+  if (fx) {
+    $('f-pos').textContent = `Az ${fmt(fx.az)}°  El ${fmt(fx.el)}°`;
+    $('f-side').textContent = fx.side ? T('Side {side}', {side: fx.side}) : T('being determined …');
+    $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
+  }
+  const eq = S.mount_mode === 'eq' && S.scope_side;
+  $('flip-card').style.display = eq ? '' : 'none';
+  $('h-side').innerHTML = eq ? esc(T('Side')) + ` <b>${esc(S.scope_side)}</b>` : '';
+  if (eq) {
+    const moving = S.target_side && S.target_side !== S.scope_side;
+    $('fl-side').innerHTML = esc(T('Side {side}', {side: S.scope_side})) +
+      (moving ? ` <span class="warn">${esc(T('→ changing to {side}', {side: S.target_side}))}</span>` : '');
+    $('fl-auto').textContent = S.auto_flip ? T('on') : T('off (no safe area or disabled)');
+  }
   $('target-info').style.display = t ? '' : 'none';
   if (t) {
     $('t-name').textContent = `${label(t)}  (${hexLabel(t.hex)})`;
@@ -391,6 +427,8 @@ document.querySelectorAll('aside .card').forEach(card => {
 });
 
 $('btn-stop').onclick = () => api('stop');
+$('btn-stop2').onclick = () => api('stop');
+$('btn-flip').onclick = () => { if (confirm(T('Test a side change? The mount will rotate the RA axis by about 180°.'))) api('flip_test'); };
 $('btn-reset').onclick = () => api('offset_reset');
 document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
   const [x, y] = b.dataset.off.split(',').map(Number); const s = $('opt-big').checked ? 0.5 : 0.1;
@@ -504,6 +542,7 @@ function drawSky() {
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xy[0], xy[1], tracked || p.hex === hoverHex ? 5 : 3.5, 0, 7); ctx.fill();
     if (tracked || p.hex === hoverHex || p.el > 10) text(label(p), xy[0] + 7, xy[1] - 6, color, tracked ? 'bold 13px system-ui' : '11px system-ui');
   }
+  if (S.fixed_target) { const xy = project(S.fixed_target.az, S.fixed_target.el); if (xy) { ctx.strokeStyle = css('--track'); ctx.lineWidth = 2; ctx.strokeRect(xy[0] - 8, xy[1] - 8, 16, 16); text(T('Test point'), xy[0] + 11, xy[1] - 9, css('--track')); } }
   if (S.tracked_now) { const xy = project(S.tracked_now.az, S.tracked_now.el); if (xy) { ctx.beginPath(); ctx.arc(xy[0], xy[1], 9, 0, 7); ctx.strokeStyle = css('--track2'); ctx.lineWidth = 2; ctx.stroke(); } }
   // Telescope
   if (S.telescope) {
