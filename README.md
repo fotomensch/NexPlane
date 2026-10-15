@@ -546,6 +546,13 @@ altitude selected in the "Safe area" card.
 The card "Location" switches between the locations in `config.yaml`; NexPlane stops the mount
 and restarts itself with the new location.
 
+#### Correction in the camera image (equatorial mode)
+
+In equatorial mode with the browser GUI the correction keys (W/A/S/D, the arrow buttons of the
+Correction card) move the target in the camera image instead of in azimuth/elevation, the same
+way wherever the telescope points and on both pier sides. The correction is kept for all
+aircraft.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

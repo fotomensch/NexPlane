@@ -110,6 +110,10 @@ class WebGui:
         self.profile_request: str | None = None
         self.limits_off = False
         self.axis_rel: list[float] | None = None   # axis position relative to the taught home (degrees)
+        # Correction in the image frame (EQ mount): steps/commands for the main loop
+        self.axis_correction = False
+        self.corr_queue: list[tuple[str, float, float]] = []
+        self.corr_info: dict[str, Any] = {}
         self.reach: dict[str, Any] | None = None
         self.reach_status: Text = ''
         self.reach_version = 0
@@ -246,6 +250,20 @@ class WebGui:
             req, self.profile_request = self.profile_request, None
             return req
 
+    def enable_axis_correction(self) -> None:
+        '''Apply the correction in the camera image (axis directions) instead of as azimuth/elevation.'''
+        with self.lock:
+            self.axis_correction = True
+
+    def pop_corr_requests(self) -> list[tuple[str, float, float]]:
+        with self.lock:
+            q, self.corr_queue = self.corr_queue, []
+            return q
+
+    def set_corr_info(self, info: dict[str, Any]) -> None:
+        with self.lock:
+            self.corr_info = info
+
     def set_axis_rel(self, a1: float, a2: float) -> None:
         with self.lock:
             self.axis_rel = [round(a1, 2), round(a2, 2)]
@@ -347,6 +365,8 @@ class WebGui:
                 'profiles': {'list': self.profiles, 'active': self.profile},
                 'limits_off': self.limits_off and bool(self.profiles),
                 'axis_rel': self.axis_rel,
+                'axis_correction': self.axis_correction,
+                'correction': self.corr_info,
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
                           'status': to_json(self.reach_status)},
                 'location': {'current': self.location,
@@ -542,11 +562,17 @@ class WebGui:
                 dele = float(data.get('del', 0.0))
                 if abs(daz) > 5 or abs(dele) > 5:
                     return _error(Msg('Correction too large'))
-                self.azm_offset += daz / 180 * math.pi
-                self.alt_offset += dele / 180 * math.pi
+                if self.axis_correction:
+                    # x = right/left in the image, y = up/down in the image (degrees)
+                    self.corr_queue.append(('step', daz, dele))
+                else:
+                    self.azm_offset += daz / 180 * math.pi
+                    self.alt_offset += dele / 180 * math.pi
             elif name == 'offset_reset':
                 self.azm_offset = 0.0
                 self.alt_offset = 0.0
+                if self.axis_correction:
+                    self.corr_queue.append(('reset', 0.0, 0.0))
             elif name == 'gain':
                 which = data.get('which')
                 delta = float(data.get('delta', 0.0))

@@ -309,6 +309,19 @@ def main() -> None:
                 f.write('# Telescope alignment data saved on ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
                 yaml.dump({'mount_mode': 'eq', 'calibration': {
                     'ra': float(util.wrap_rad(new_ra_cal, 0)), 'dec': float(util.wrap_rad(new_dec_cal, 0))}}, f)
+        # Correction in the camera image (EQ mount, browser GUI).
+        if args.web and pointing is not None:
+            gui_iface.enable_axis_correction()
+
+        def img2ax(dx: float, dy: float) -> tuple[float, float]:
+            '''Offset in the camera image (rad) -> offset of the axes (ra_raw, dec_raw).'''
+            assert pointing is not None
+            d = None
+            if not gui_iface.is_aligned():
+                # Without alignment: Dec axis orientation from the home position (points to the pole)
+                dec_raw_now = pointing.last_raw[1] if pointing.last_raw is not None else telescope.get_ra_dec()[1]
+                d = (dec_raw_now - home_dec_raw + math.pi / 2) if home_dec_raw is not None else 0.0
+            return pointing.image_to_axes(dx, dy, d)
 
         # Main loop
         warn_comm_failure = False
@@ -406,6 +419,18 @@ def main() -> None:
                             request_reach()
                     except axis_limits.LimitError as e:
                         notify(Msg('Changing the profile is not possible: {error}', error=of_exception(e)))
+
+                # Correction and alignment commands from the browser
+                if args.web and pointing is not None:
+                    for kind, a, b in gui_iface.pop_corr_requests():
+                        if kind == 'step':
+                            pointing.add_correction(*img2ax(math.radians(a), math.radians(b)))
+                        elif kind == 'reset':
+                            pointing.reset_correction()
+                            notify(Msg('Correction set to 0.'))
+                if args.web and pointing is not None:
+                    gui_iface.set_corr_info(
+                        {'ra': math.degrees(pointing.corr_ra), 'dec': math.degrees(pointing.corr_dec)})
 
                 align_request = gui_iface.pop_align_request() if manual is not None else None
                 jog = gui_iface.get_jog() if manual is not None else None

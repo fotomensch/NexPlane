@@ -496,8 +496,16 @@ function updatePanel() {
     const aim = S.tracked_now || t;
     $('t-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, aim), 2)}°` : '–';
   }
-  $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
-  $('o-el').textContent = fmt(S.offsets.el, 2) + '°';
+  if (S.axis_correction) {
+    const C = S.correction || {};
+    $('o-l1').textContent = T('RA axis'); $('o-l2').textContent = T('Dec axis');
+    $('o-az').textContent = fmt(C.ra || 0, 2) + '°';
+    $('o-el').textContent = fmt(C.dec || 0, 2) + '°';
+    $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft.');
+  } else {
+    $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
+    $('o-el').textContent = fmt(S.offsets.el, 2) + '°';
+  }
   $('g-kp').textContent = fmt(S.gains.kp, 2); $('g-ki').textContent = fmt(S.gains.ki, 2); $('g-kd').textContent = fmt(S.gains.kd, 2);
 
   const onlyAbove = $('opt-above').checked;

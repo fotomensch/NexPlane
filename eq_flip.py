@@ -134,6 +134,10 @@ class EqPointing:
         self.max_rate = math.radians(max_rate_deg_s)
         self.switch_margin = math.radians(switch_margin_deg)
         self.min_hold_s = min_hold_s
+        # Alignment correction in axis direction (rad, like ra_raw/dec_raw). Equivalent to a
+        # shift of the calibration and therefore applies to all targets and on both sides.
+        self.corr_ra = 0.0
+        self.corr_dec = 0.0
         self.side: str | None = None       # selected side for the current target
         self.side_since = 0.0
         self.last_scope_side = SIDE_A
@@ -146,8 +150,8 @@ class EqPointing:
 
     def raw_to_radec(self, ra_raw: float, dec_raw: float) -> tuple[float, float, str]:
         '''Raw axis position -> (ra, dec, side) on the sky.'''
-        d = _wrap(dec_raw + self.dec_cal, -math.pi)     # -180 .. 180 degrees
-        ra = ra_raw + self.ra_cal
+        d = _wrap(dec_raw - self.corr_dec + self.dec_cal, -math.pi)     # -180 .. 180 degrees
+        ra = ra_raw - self.corr_ra + self.ra_cal
         if d > math.pi / 2:
             return _wrap(ra + math.pi), math.pi - d, SIDE_B
         if d < -math.pi / 2:
@@ -201,11 +205,11 @@ class EqPointing:
         out = {}
         for side in (SIDE_A, SIDE_B):
             if side == SIDE_A:
-                ra_raw = ra_t - self.ra_cal
-                dec_raw = dec_t - self.dec_cal
+                ra_raw = ra_t - self.ra_cal + self.corr_ra
+                dec_raw = dec_t - self.dec_cal + self.corr_dec
             else:
-                ra_raw = ra_t + math.pi - self.ra_cal
-                dec_raw = math.pi - dec_t - self.dec_cal
+                ra_raw = ra_t + math.pi - self.ra_cal + self.corr_ra
+                dec_raw = math.pi - dec_t - self.dec_cal + self.corr_dec
             # Calibration values may be stored shifted by full revolutions
             # (align.py stores 0..360 degrees). Therefore place the Dec axis at the nearest
             # equivalent position.
@@ -233,10 +237,41 @@ class EqPointing:
         return out
 
     def set_calibration(self, ra_cal: float, dec_cal: float) -> None:
-        '''New alignment.'''
+        '''New alignment; an existing correction is discarded.'''
         self.ra_cal = ra_cal
         self.dec_cal = dec_cal
+        self.corr_ra = 0.0
+        self.corr_dec = 0.0
         self.reset()
+
+    # ------------------------------------------------------------------
+    # Correction (keyboard, browser)
+    # ------------------------------------------------------------------
+
+    MIN_COS = 0.15   # near the pole the RA axis barely moves the image; limit the gain
+
+    def image_to_axes(self, dx: float, dy: float, d: float | None = None) -> tuple[float, float]:
+        '''
+        Convert a shift in the camera image (rad on the sky; x = direction of RA motion, y = Dec axis)
+        into a shift of the axes (ra_raw, dec_raw). The camera is fixed to the
+        Dec axis: a Dec motion always shifts the image the same way, an RA motion is reduced
+        by cos(d) and has the opposite sign beyond the pole (side B).
+        '''
+        if d is None:
+            dec_raw = self.last_raw[1] if self.last_raw is not None else self.telescope.get_ra_dec()[1]
+            d = _wrap(dec_raw - self.corr_dec + self.dec_cal, -math.pi)
+        c = math.cos(d)
+        if abs(c) < self.MIN_COS:
+            c = math.copysign(self.MIN_COS, c if c != 0 else 1.0)
+        return dx / c, dy
+
+    def add_correction(self, d_ra: float, d_dec: float, limit: float = math.radians(20.0)) -> None:
+        self.corr_ra = max(-limit, min(limit, self.corr_ra + d_ra))
+        self.corr_dec = max(-limit, min(limit, self.corr_dec + d_dec))
+
+    def reset_correction(self) -> None:
+        self.corr_ra = 0.0
+        self.corr_dec = 0.0
 
     def reachable(self, ra_t: float, dec_t: float, side: str) -> bool | None:
         '''Is the target within the safe area on the given side? None = unknown (no limits).'''
