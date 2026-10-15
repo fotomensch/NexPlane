@@ -619,6 +619,9 @@ card shows the GPS position, warns when the selected location is more than 300 m
 fill in the editor from it. `./gps_check.py` checks whether the modem delivers a position.
 `gps: false` turns this off.
 
+Clicking on the map fills in the ground elevation from public elevation services (OpenTopoData
+EU-DEM, Open-Meteo); for landmarks add the height of the building.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

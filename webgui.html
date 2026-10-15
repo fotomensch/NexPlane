@@ -681,6 +681,24 @@ function placeFields() {
   const num = id => parseFloat(String($(id).value).replace(',', '.'));
   return {name: $('place-name').value.trim(), type: $('place-type').value, lat: num('place-lat'), lon: num('place-lon'), alt: num('place-alt')};
 }
+let placeAltAuto = true, placeElevSeq = 0;
+async function placeLookupElevation(lat, lon) {
+  const seq = ++placeElevSeq;
+  $('place-elev').textContent = T('Looking up ground elevation …');
+  try {
+    const r = await fetch(`/api/elevation?lat=${lat}&lon=${lon}`, {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    const j = await r.json();
+    if (seq !== placeElevSeq) return;
+    if (!j.ok) { $('place-elev').textContent = T('Ground elevation not available ({error})', {error: j.error ? msgText(j.error) : String(r.status)}); return; }
+    const g = Math.round(j.alt);
+    const lm = $('place-type').value === 'landmark';
+    $('place-elev').innerHTML = `${esc(T('Ground'))}: <b>${g} m</b> ${esc(T('above sea level'))} <span class="hint">(${esc(j.source)})</span>` +
+      (lm ? `<br><span class="warn">${esc(T('Landmark: add the height of the building or spire.'))}</span>` : '');
+    if (placeAltAuto) { $('place-alt').value = g; }
+  } catch (e) {
+    if (seq === placeElevSeq) $('place-elev').textContent = T('Ground elevation not available (no internet?)');
+  }
+}
 function placeSetPos(lat, lon, alt) {
   $('place-lat').value = lat.toFixed(6); $('place-lon').value = lon.toFixed(6);
   $('place-barpos').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
@@ -702,8 +720,8 @@ async function initPlaceMap() {
   placeMap.on('baselayerchange', e => storeSet('nexplane-place-layer', e.layer === sat ? 'sat' : 'osm'));
   placeLayer = L.layerGroup().addTo(placeMap);
   placeMarker = L.marker(c, {draggable: true});
-  placeMarker.on('dragend', () => { const p = placeMarker.getLatLng(); placeSetPos(p.lat, p.lng, null); });
-  placeMap.on('click', e => { placeSetPos(e.latlng.lat, e.latlng.lng, null); });
+  placeMarker.on('dragend', () => { const p = placeMarker.getLatLng(); placeSetPos(p.lat, p.lng, null); placeLookupElevation(p.lat, p.lng); });
+  placeMap.on('click', e => { placeSetPos(e.latlng.lat, e.latlng.lng, null); placeLookupElevation(e.latlng.lat, e.latlng.lng); });
   renderPlaceList(S && S.location);
 }
 function renderPlaceList(Lc) {
@@ -721,6 +739,7 @@ function renderPlaceList(Lc) {
   }
 }
 $('place-edit').addEventListener('toggle', () => { if ($('place-edit').open) initPlaceMap(); });
+$('place-alt').addEventListener('input', () => { placeAltAuto = $('place-alt').value.trim() === ''; });
 function placeFull(on) {
   $('place-wrap').classList.toggle('full', on);
   $('place-fs').textContent = on ? '✕' : '⛶';
@@ -733,7 +752,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('place-w
 $('place-gps').onclick = () => {
   const f = S && S.gps && S.gps.fix;
   if (!f) { addLocalMsg(T('No GPS position available ({status}).', {status: S && S.gps ? S.gps.status : {t: 'GPS off'}})); return; }
-  placeSetPos(f.lat, f.lon, f.alt); $('place-elev').textContent = T('Altitude taken from GPS.');
+  placeSetPos(f.lat, f.lon, f.alt); placeAltAuto = false; $('place-elev').textContent = T('Altitude taken from GPS.');
   if (placeMap) placeMap.setView([f.lat, f.lon], 15);
   if (!$('place-name').value) $('place-name').value = 'GPS ' + new Date().toLocaleDateString(LOCALE());
 };
@@ -755,7 +774,7 @@ $('place-list').addEventListener('click', e => {
   if (d && confirm(T('Delete “{name}”?', {name: d.dataset.placedel}))) api('place_delete', {name: d.dataset.placedel});
   if (ed && S) {
     const p = S.location.presets.find(q => q.name === ed.dataset.placeedit); if (!p) return;
-    $('place-name').value = p.name; $('place-type').value = p.type; placeSetPos(p.lat, p.lon, p.alt); $('place-elev').textContent = '';
+    $('place-name').value = p.name; $('place-type').value = p.type; placeSetPos(p.lat, p.lon, p.alt); placeAltAuto = false; $('place-elev').textContent = '';
     if (placeMap) placeMap.setView([p.lat, p.lon], 15);
   }
 });

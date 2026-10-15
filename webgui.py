@@ -726,6 +726,21 @@ class WebGui:
                         return
                     with open(full, 'rb') as f:
                         self._send(200, f.read(), ctype)
+                elif self.path.startswith('/api/elevation?'):
+                    if not self._token_ok():
+                        self._send(403, b'forbidden', 'text/plain')
+                        return
+                    import urllib.parse
+                    import elevation
+                    q = urllib.parse.parse_qs(self.path.split('?', 1)[1])
+                    try:
+                        lat, lon = float(q['lat'][0]), float(q['lon'][0])
+                        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                            raise ValueError
+                    except (KeyError, ValueError, IndexError):
+                        self._json(400, _error(Msg('Invalid request')))
+                        return
+                    self._json(200, elevation.lookup(lat, lon))
                 elif self.path == '/api/reach':
                     if not self._token_ok():
                         self._send(403, b'forbidden', 'text/plain')
