@@ -234,6 +234,10 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
         <button class="btn" id="btn-corr-save" style="flex:1" title="Aircraft is centred: accept as sync point">Accept (sync point)</button>
         <button class="btn" id="btn-model-pop" title="Delete last sync point">Delete last</button>
       </div>
+      <div class="row" id="focal-row" style="margin-top:8px;display:none;gap:6px;align-items:center">
+        <span class="hint">Focal length when accepting</span>
+        <select id="focal-sel" class="btn"></select>
+      </div>
       <div id="model-status" style="margin-top:6px;font-size:13px"></div>
       <div id="model-points" style="margin-top:4px;font-size:12px"></div>
       <div class="hint" style="margin-top:6px" id="corr-hint">Keys: W/A/S/D 0.1° each, with Shift 0.5°, Q resets</div>
@@ -533,16 +537,24 @@ function updatePanel() {
       }
       $('model-status').innerHTML = t;
       const L = Mo.list || [];
-      const pkey = LANG + JSON.stringify(L.map(p => [p.name, p.res == null ? null : Math.round(p.res * 100)]));
+      const pkey = LANG + JSON.stringify(L.map(p => [p.name, p.focal, p.res == null ? null : Math.round(p.res * 100)]));
       if ($('model-points').dataset.key !== pkey) {
         $('model-points').dataset.key = pkey;
         $('model-points').innerHTML = L.length ? '<table style="width:100%"><tbody>' + L.map((p, i) => {
           const bad = p.res != null && p.res > 0.5;
-          return `<tr><td>${i + 1}</td><td>${esc(p.name || '–')}</td>` +
+          return `<tr><td>${i + 1}</td><td>${esc(p.name || '–')}</td><td>${p.focal ? Math.round(p.focal) + ' mm' : ''}</td>` +
                  `<td class="${bad ? 'warn' : ''}" title="${esc(T('Deviation from the model'))}">${p.res == null ? '' : fmt(p.res, 2) + '°'}</td>` +
                  `<td style="text-align:right">${L.length > 1 ? `<button class="btn" data-delpt="${i}" title="${esc(T('Delete point'))}" style="padding:0 6px">✕</button>` : ''}</td></tr>`;
         }).join('') + '</tbody></table>' + (L.some(p => p.res != null && p.res > 0.5) ? `<span class="warn">${esc(T('Red: poor fit (> 0.5°) – centred wrongly?'))}</span>` : '') : '';
       }
+    }
+    const F = S.focal || {steps: [], mm: 0};
+    $('focal-row').style.display = 'flex';
+    const fkey = F.steps.join('|') + '|' + F.mm;
+    if ($('focal-sel').dataset.key !== fkey) {
+      $('focal-sel').dataset.key = fkey;
+      const steps = F.steps.includes(F.mm) ? F.steps : [...F.steps, F.mm].sort((a, b) => a - b);
+      $('focal-sel').innerHTML = steps.map(s => `<option value="${s}" ${s === F.mm ? 'selected' : ''}>${Math.round(s)} mm</option>`).join('');
     }
     $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft. When the tracked aircraft is centred, “Accept” turns it into a sync point.');
   } else {
@@ -684,6 +696,7 @@ $('model-points').addEventListener('click', e => {
   const i = Number(b.dataset.delpt);
   if (confirm(T('Delete sync point {n}?', {n: i + 1}))) api('model_pop', {index: i});
 });
+$('focal-sel').onchange = e => api('set_focal', {mm: Number(e.target.value)});
 document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
   const [x, y] = b.dataset.off.split(',').map(Number); const s = $('opt-big').checked ? 0.5 : 0.1;
   api('offset', {daz: x * s, del: y * s});

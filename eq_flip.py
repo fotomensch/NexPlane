@@ -256,19 +256,25 @@ class EqPointing:
         self.reset()
 
     def start_session(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float,
-                      name: str = '') -> None:
+                      name: str = '', focal_mm: float | None = None, sensor_mm: float = 23.5) -> None:
         '''After alignment: the alignment point is the first point of the model.'''
-        self.model.points = [self._point(ra_t, dec_t, ra_raw, dec_raw, name)]
+        self.model.points = [self._point(ra_t, dec_t, ra_raw, dec_raw, name, focal_mm, sensor_mm)]
 
-    def _point(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float, name: str) -> dict[str, Any]:
-        return {'t': time.time(), 'ra_raw': ra_raw, 'dec_raw': dec_raw, 'ra': ra_t, 'dec': dec_t, 'name': name}
+    def _point(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float, name: str,
+               focal_mm: float | None, sensor_mm: float) -> dict[str, Any]:
+        pt: dict[str, Any] = {'t': time.time(), 'ra_raw': ra_raw, 'dec_raw': dec_raw, 'ra': ra_t, 'dec': dec_t, 'name': name}
+        if focal_mm:
+            pt['focal'] = float(focal_mm)
+            pt['sigma'] = pointing_model.Model.sigma_for_focal(focal_mm, sensor_mm)
+        return pt
 
-    def sync(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float, name: str = '') -> dict[str, Any]:
+    def sync(self, ra_t: float, dec_t: float, ra_raw: float, dec_raw: float,
+             name: str = '', focal_mm: float | None = None, sensor_mm: float = 23.5) -> dict[str, Any]:
         '''
         The telescope points (after correction) exactly at (ra_t, dec_t): record point, refit
         model, reset correction to 0. The position does not change (except for the model residual).
         '''
-        self.model.points.append(self._point(ra_t, dec_t, ra_raw, dec_raw, name))
+        self.model.points.append(self._point(ra_t, dec_t, ra_raw, dec_raw, name, focal_mm, sensor_mm))
         res = self.model.fit(self.ra_cal, self.dec_cal)
         self.ra_cal, self.dec_cal = res['ra_cal'], res['dec_cal']
         self.corr_ra = 0.0

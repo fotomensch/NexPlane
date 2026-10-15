@@ -115,6 +115,8 @@ class WebGui:
         self.axis_correction = False
         self.corr_queue: list[tuple[str, float, float]] = []
         self.corr_info: dict[str, Any] = {}
+        self.focal_mm = 300.0
+        self.focal_steps: list[float] = [150.0, 300.0, 600.0]
         self.reach: dict[str, Any] | None = None
         self.reach_status: Text = ''
         self.reach_version = 0
@@ -265,6 +267,15 @@ class WebGui:
         with self.lock:
             self.corr_info = info
 
+    def set_focal_options(self, steps: list[float], default: float) -> None:
+        with self.lock:
+            self.focal_steps = list(steps)
+            self.focal_mm = default
+
+    def get_focal(self) -> float:
+        with self.lock:
+            return self.focal_mm
+
     def set_axis_rel(self, a1: float, a2: float) -> None:
         with self.lock:
             self.axis_rel = [round(a1, 2), round(a2, 2)]
@@ -368,6 +379,7 @@ class WebGui:
                 'limits_off': self.limits_off and bool(self.profiles),
                 'axis_rel': self.axis_rel,
                 'axis_correction': self.axis_correction,
+                'focal': {'mm': self.focal_mm, 'steps': self.focal_steps},
                 'correction': self.corr_info,
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
                           'status': to_json(self.reach_status)},
@@ -586,6 +598,11 @@ class WebGui:
                     return _error(Msg('Only available in EQ mode'))
                 idx = data.get('index')
                 self.corr_queue.append(('pop', float(idx) if isinstance(idx, int) and idx >= 0 else -1.0, 0.0))
+            elif name == 'set_focal':
+                mm = float(data.get('mm', 0))
+                if not 10 <= mm <= 5000:
+                    return _error(Msg('Invalid focal length'))
+                self.focal_mm = mm
             elif name == 'gain':
                 which = data.get('which')
                 delta = float(data.get('delta', 0.0))

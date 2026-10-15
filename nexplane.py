@@ -389,6 +389,10 @@ def main() -> None:
                 return '', None, None
 
         obs_lat = float(observatory_location.lat.to_value('rad'))
+        sensor_mm = float(config_data.get('sensor_width_mm', 23.5))
+        focal_steps = [float(x) for x in config_data.get('focal_lengths_mm', [150, 300, 600])]
+        if args.web:
+            gui_iface.set_focal_options(focal_steps, float(config_data.get('focal_length_mm', focal_steps[0])))
 
         def model_text() -> Text:
             '''Short description of the active pointing model, or an empty string.'''
@@ -427,7 +431,8 @@ def main() -> None:
                 ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
                 new_ra_cal, new_dec_cal, side = eq_flip.calibrate(ra_t, dec_t, raw_ra, raw_dec, home_dec_raw)
                 pointing.set_calibration(new_ra_cal, new_dec_cal)
-                pointing.start_session(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '')
+                pointing.start_session(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '',
+                                       gui_iface.get_focal(), sensor_mm)
                 gui_iface.set_aligned(Msg('aircraft {name} (side {side})', name=callsign or hex_id, side=side))
                 store_home_ha()
                 msg = Msg('Aligned on {name} (point 1, side {side}). NexPlane now tracks by itself. Centre further '
@@ -435,7 +440,7 @@ def main() -> None:
                           'misalignment is included.', name=callsign or hex_id, side=side)
             elif p_az is not None and p_el is not None:
                 ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
-                res = pointing.sync(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '')
+                res = pointing.sync(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '', gui_iface.get_focal(), sensor_mm)
                 new_ra_cal, new_dec_cal = pointing.ra_cal, pointing.dec_cal
                 n = len(pointing.model.points)
                 msg = Msg('Point {n} accepted ({name}).', n=n, name=callsign or hex_id)
@@ -615,7 +620,8 @@ def main() -> None:
                         new_ra_cal, new_dec_cal, align_side = eq_flip.calibrate(real_ra, real_dec, raw_ra, raw_dec, home_dec_raw)
                         pointing.set_calibration(new_ra_cal, new_dec_cal)
                         pointing.start_session(real_ra, real_dec, raw_ra, raw_dec,
-                                               align_request[4:] if align_request.startswith('sky:') else align_request)
+                                               align_request[4:] if align_request.startswith('sky:') else align_request,
+                                               gui_iface.get_focal(), sensor_mm)
                         write_alignment(new_ra_cal, new_dec_cal)
                         store_home_ha()
                         align_name = align_request[4:] if align_request.startswith('sky:') else align_request

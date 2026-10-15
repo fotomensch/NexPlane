@@ -184,8 +184,17 @@ class Model:
 
     @classmethod
     def sigma(cls, pt: dict[str, Any]) -> float:
-        '''Accuracy of a point (rad); all points count the same.'''
-        return cls.NOISE
+        '''Accuracy of a point (rad); points with long focal length weigh more.'''
+        return float(pt.get('sigma', cls.NOISE))
+
+    @staticmethod
+    def sigma_for_focal(focal_mm: float, sensor_mm: float = 23.5) -> float:
+        '''
+        Estimated centering accuracy: about 3 % of the image width, plus 0.05 degrees
+        for the inaccuracy of the aircraft position (ADS-B).
+        '''
+        fov = sensor_mm / max(10.0, focal_mm)
+        return math.hypot(0.03 * fov, math.radians(0.05))
 
     MIN_POINTS = 3
     MAX_STD = math.radians(0.5)       # max. uncertainty of the polar misalignment, otherwise zero point only
@@ -261,7 +270,7 @@ class Model:
         '''Summary for the GUI: number of points, residuals and the polar axis error in degrees.'''
         pe = self.polar_error(lat)
         return {'points': len(self.points), 'active': self.active,
-                'list': [{'name': str(pt.get('name', '')),
+                'list': [{'name': str(pt.get('name', '')), 'focal': pt.get('focal'),
                           'res': math.degrees(self.residuals[i]) if i < len(self.residuals) else None}
                          for i, pt in enumerate(self.points)],
                 'rms': math.degrees(self.rms) if self.points else None,

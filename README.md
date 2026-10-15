@@ -567,6 +567,10 @@ each alignment the direction of the mount at its home position is saved in
 `home_direction.yaml`, so on the next start NexPlane is roughly aligned right away if the mount
 was switched on at home.
 
+Each sync point records the focal length selected in the Correction card; points taken with a
+longer focal length count more in the fit. Settings: `focal_lengths_mm: [150, 300, 600]`,
+`focal_length_mm` (start value), `sensor_width_mm: 23.5`.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
