@@ -102,6 +102,7 @@ class WebGui:
         self.align_targets: list[str] = []
         self.aligned = False
         self.aligned_text: Text = ''
+        self.rough_aligned = False      # rough alignment from the saved home direction
         self.location = ''
         self.location_presets: dict[str, tuple[float, float, float]] = {}
         self.location_request: str | None = None
@@ -323,10 +324,11 @@ class WebGui:
             req, self.align_request = self.align_request, None
             return req
 
-    def set_aligned(self, text: Text) -> None:
+    def set_aligned(self, text: Text, rough: bool = False) -> None:
         with self.lock:
             self.aligned = True
             self.aligned_text = text
+            self.rough_aligned = rough
 
     def notify(self, text: Text) -> None:
         '''Show a message (e.g. from the limit monitor) in the GUI and, in English, in the terminal.'''
@@ -375,6 +377,7 @@ class WebGui:
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
                            'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
+                           'rough_aligned': self.aligned and self.rough_aligned,
                            'jogging': time.monotonic() - self.jog_time <= self.JOG_DEADMAN_S and self.jog_rates != (0.0, 0.0)},
                 'fixed_target': ({'az': _deg(self.fixed_target['az']), 'el': _deg(self.fixed_target['el']),
                                   'side': self.fixed_target['side']} if self.fixed_target else None),
@@ -458,7 +461,7 @@ class WebGui:
         the main loop; returns {ok: True} or {ok: False, error: message}.
         '''
         with self.lock:
-            if name in ('track', 'flip_test') and self.manual_available and not self.aligned:
+            if name == 'flip_test' and self.manual_available and not self.aligned:
                 return _error(Msg('Align first (card "Control & alignment").'))
             if name in ('track', 'flip_test') and self.limits_off:
                 return _error(Msg('The safe area is disabled. Re-enable it first.'))
@@ -504,7 +507,8 @@ class WebGui:
                 r2 = float(data.get('r2', 0.0))
                 if abs(r1) > 5.0 or abs(r2) > 5.0:
                     return _error(Msg('Speed too high'))
-                self.tracked_plane = None
+                if self.aligned:
+                    self.tracked_plane = None   # before alignment the aiming target stays selected
                 self.fixed_target = None
                 self.home_requested = False
                 self.jog_rates = (r1, r2)

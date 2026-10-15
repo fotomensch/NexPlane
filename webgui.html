@@ -176,6 +176,8 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
         <input id="align-sky" class="btn" placeholder="e.g. vega, jupiter" style="flex:1;min-width:0;display:none">
       </div>
       <button class="btn" id="btn-align" style="width:100%;margin-top:6px">Telescope points at it now – align</button>
+      <div class="hint" style="margin:10px 0 4px">Or on an aircraft: click it in the list or map (aiming target), move the telescope to centre it, then</div>
+      <button class="btn" id="btn-align-plane" style="width:100%" title="Same as “Accept (sync point)” in the Correction card">Aircraft is centred – accept as sync point</button>
     </div>
     <div class="card" id="target-card">
       <h2>Tracking</h2>
@@ -456,9 +458,14 @@ function updatePanel() {
   const M = S.manual || {};
   $('manual-card').style.display = M.available ? '' : 'none';
   if (M.available) {
-    $('align-status').innerHTML = M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>`
+    $('btn-align-plane').disabled = !S.tracked || !S.axis_correction;
+    $('align-status').innerHTML = M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>` +
+        (M.rough_aligned ? ` <span class="hint">${esc(T('– track a first aircraft, centre it, accept it'))}</span>` : '')
       : `<span class="warn">${esc(T('Not aligned.'))}</span> <span class="hint">` +
-        esc(T('Point the telescope at a landmark or a sky object and align below.')) + '</span>';
+        esc(T('With a landmark: point the telescope at it and align below. Without a landmark: click an aircraft in ' +
+              'the list – it becomes the aiming target, NexPlane does not move by itself yet. Move the ' +
+              'telescope onto it by hand, centred, then press “Aircraft is centred”.')) + '</span>' +
+        (S.tracked ? `<br>${esc(T('Aiming target:'))} <b>${esc((S.planes.find(p => p.hex === S.tracked) || {}).callsign || S.tracked)}</b>` : '');
     $('btn-home').textContent = M.home_active ? T('Moving to home position … (Esc stops)') : T('Go to home position');
     $('home-hint').textContent = T('Target: {where}', {where: M.home_source});
     const sel = $('align-sel');
@@ -670,6 +677,7 @@ $('btn-flip').onclick = () => { if (confirm(T('Test a side change? The mount wil
 $('btn-reset').onclick = () => api('offset_reset');
 const confirmSyncPoint = () => { if (confirm(T('Is the tracked aircraft centred in the image now? Then it is accepted as a sync point.'))) api('corr_save'); };
 $('btn-corr-save').onclick = confirmSyncPoint;
+$('btn-align-plane').onclick = confirmSyncPoint;
 $('btn-model-pop').onclick = () => { if (confirm(T('Delete the last sync point?'))) api('model_pop'); };
 $('model-points').addEventListener('click', e => {
   const b = e.target.closest('[data-delpt]'); if (!b) return;

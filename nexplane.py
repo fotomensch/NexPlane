@@ -317,9 +317,55 @@ def main() -> None:
                     f.write(f'# Pointing model: {st["points"]} points, residual {st["rms"]:.2f} degrees, '
                             f'polar axis {st["polar_high"]:+.2f} degrees high, {st["polar_east"]:+.2f} degrees east\n')
 
+        # Remember the mount's heading in the home position: on the next start NexPlane is then
+        # roughly aligned without a landmark (accuracy about that of the north alignment).
+        home_ha_file = os.path.join(config.main_config_dir(), 'home_direction.yaml')
+
+        def home_raw_now() -> tuple[float, float]:
+            '''Raw (ra_raw, dec_raw) of the home position now; ra_raw changes with sidereal time.'''
+            assert manual is not None
+            ra_offset = eq_flip.SIDEREAL_RAD_PER_S * (time.time() - telescope.start_time)
+            return ra_offset - manual.home[0], manual.home[1]
+
+        def store_home_ha() -> None:
+            '''Save the hour angle of the RA axis at the taught home position (after every alignment).'''
+            if manual is None or not manual.home_is_taught or pointing is None:
+                return
+            ra_raw_h, _ = home_raw_now()
+            h = util.wrap_rad(pointing.model.lst() - (ra_raw_h + pointing.ra_cal), -math.pi)
+            try:
+                with open(home_ha_file, 'w') as f:
+                    f.write('# Written by NexPlane: hour angle of the RA axis in the home position.\n'
+                            '# Used for rough alignment without a landmark. Delete it if the mount was rebuilt.\n')
+                    yaml.dump({'hour_angle_degrees': float(math.degrees(h)),
+                               'saved': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
+            except OSError as e:
+                notify(Msg('The home direction could not be saved: {error}', error=str(e)))
+
+        def rough_align() -> bool:
+            '''Rough alignment from the home position (tube pointing at the pole) and the saved home heading.'''
+            if manual is None or not manual.home_is_taught or pointing is None or not os.path.exists(home_ha_file):
+                return False
+            try:
+                with open(home_ha_file) as f:
+                    h = math.radians(float(yaml.safe_load(f)['hour_angle_degrees']))
+            except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError):
+                return False
+            ra_raw_h, dec_raw_h = home_raw_now()
+            pointing.set_calibration(pointing.model.lst() - ra_raw_h - h, math.pi / 2 - dec_raw_h)
+            gui_iface.set_aligned(Msg('roughly from the home position (no landmark)'), rough=True)
+            notify(Msg('Roughly aligned from the home position (the mount pointed at the pole when switched on, '
+                       'roughly north). Track a first aircraft, centre it and press “Accept (sync point)”.'))
+            request_reach()
+            return True
+
         # Correction in the camera image (EQ mount, browser GUI).
         if args.web and pointing is not None:
             gui_iface.enable_axis_correction()
+        if manual is not None and not (args.landmark or args.alignment):
+            if not rough_align():
+                notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft in the list '
+                           'as aiming target, move it to the image centre by hand, then press “Aircraft is centred”.'))
 
         def img2ax(dx: float, dy: float) -> tuple[float, float]:
             '''Offset in the camera image (rad) -> offset of the axes (ra_raw, dec_raw).'''
@@ -370,14 +416,20 @@ def main() -> None:
             callsign, p_az, p_el = plane_info(hex_id)
             res: dict[str, Any] = {}
             msg: Msg
-            first = not pointing.model.points
+            first = not gui_iface.is_aligned() or not pointing.model.points
+            if first and (p_az is None or p_el is None):
+                if not gui_iface.is_aligned():
+                    notify(Msg('Not aligned yet: first choose an aircraft in the list as aiming target, move it '
+                               'to the image centre by hand, then accept it.'))
+                    return False
             if first and p_az is not None and p_el is not None:
-                # First point of this setup (alignment loaded from a file): do a full alignment on it
+                # First point of this setup (no landmark or after rough alignment): do a full alignment
                 ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
                 new_ra_cal, new_dec_cal, side = eq_flip.calibrate(ra_t, dec_t, raw_ra, raw_dec, home_dec_raw)
                 pointing.set_calibration(new_ra_cal, new_dec_cal)
                 pointing.start_session(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '')
                 gui_iface.set_aligned(Msg('aircraft {name} (side {side})', name=callsign or hex_id, side=side))
+                store_home_ha()
                 msg = Msg('Aligned on {name} (point 1, side {side}). NexPlane now tracks by itself. Centre further '
                           'aircraft in other directions and press “Accept (sync point)”; from 3 points on, the polar '
                           'misalignment is included.', name=callsign or hex_id, side=side)
@@ -401,6 +453,7 @@ def main() -> None:
                         msg += Msg('(The previous polar error model stays active.)')
                 if res.get('warn'):
                     msg += Msg('WARNING: {warning}', warning=res['warn'])
+                store_home_ha()
             else:
                 new_ra_cal, new_dec_cal = pointing.absorb_correction()
                 msg = Msg('Correction accepted as an offset (no aircraft tracked, so no sync point for the model; '
@@ -564,6 +617,7 @@ def main() -> None:
                         pointing.start_session(real_ra, real_dec, raw_ra, raw_dec,
                                                align_request[4:] if align_request.startswith('sky:') else align_request)
                         write_alignment(new_ra_cal, new_dec_cal)
+                        store_home_ha()
                         align_name = align_request[4:] if align_request.startswith('sky:') else align_request
                         gui_iface.set_aligned(Msg('{name} (side {side})', name=align_name, side=align_side))
                         request_reach()
@@ -614,7 +668,7 @@ def main() -> None:
                     # There is no airplane to track, so stop the tracker.
                     target_tracker.stop()
                 elif manual is not None and not gui_iface.is_aligned() and tracked_plane_hex_id in planes:
-                    # Not aligned yet: do not drive to the plane.
+                    # Not aligned yet: the plane is only an aiming target; the user slews to it manually.
                     target_tracker.stop()
                 elif tracked_plane_hex_id in planes:
                     # Extrapolate from the last known position and velocity of the plane to estimate the current position.

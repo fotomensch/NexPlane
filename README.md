@@ -561,6 +561,12 @@ different directions it also fits the polar axis misalignment and shows it, e.g.
 low, 1.1° too far east", which helps adjusting the mount. Points that fit badly are marked and
 can be deleted.
 
+Without a landmark, select an aircraft before aligning: it becomes an "aiming target", NexPlane
+does not move, you centre it by hand and accept it; this first point aligns NexPlane. After
+each alignment the direction of the mount at its home position is saved in
+`home_direction.yaml`, so on the next start NexPlane is roughly aligned right away if the mount
+was switched on at home.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
