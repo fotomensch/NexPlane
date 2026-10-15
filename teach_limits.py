@@ -17,7 +17,10 @@ Procedure:
      in order with "m", "e" ends it.
   6. Save with "s", quit with "q".
 
-With --edit an existing file is loaded, e.g. to add exclusion zones later.
+Profiles: for different setups (long tube / camera only) there is one file each
+in config.yaml under axis_limits.profiles. With --profile NAME that
+profile is taught or checked. With --edit an existing file is
+loaded, e.g. to add exclusion zones later.
 
 Keys:
   Arrow left/right    move axis 1 (RA)         while held down
@@ -69,8 +72,12 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     config.add_arg_telescope_protocol(parser, config_data, validators)
 
     settings = axis_limits.get_settings(config_data) or dict(axis_limits.DEFAULTS)
+    profiles = settings.get('profiles') or {}
+    parser.add_argument('--profile', type=str, default=None,
+                        help='Profile from axis_limits.profiles to teach or check '
+                             f'(available: {", ".join(profiles) or "none"}; default: {settings.get("profile")})')
     parser.add_argument('--output', type=str, default=None,
-                        help='Output file (default: axis_limits.file from config.yaml, or limits.yaml)')
+                        help='Output file (default: the file of the profile, or limits.yaml)')
     parser.add_argument('--edit', action='store_true',
                         help='Load an existing file and continue editing it (e.g. to add exclusion zones)')
     parser.add_argument('--check', action='store_true',
@@ -81,6 +88,13 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     config.validate(validators, args)
     if args.telescope_protocol not in SKYWATCHER_TELESCOPE_PROTOCOLS:
         raise SystemExit('teach_limits.py only supports Sky-Watcher protocols.')
+    if args.profile is not None:
+        if args.profile not in profiles:
+            raise SystemExit(f'Profile "{args.profile}" does not exist in config.yaml (axis_limits.profiles). '
+                             f'Available: {", ".join(profiles) or "none"}')
+        if 'axis_limits' in config_data:
+            config_data['axis_limits']['profile'] = args.profile
+        settings = axis_limits.get_settings(config_data) or settings
     if args.output is None:
         args.output = settings.get('file') or 'limits.yaml'
     args.margin = float(settings['margin_degrees'])
@@ -363,7 +377,8 @@ def main() -> None:
             teacher.exclusions = [list(z) for z in guard.holes]
             teacher.home = {1: guard.home[0], 2: guard.home[1]}
             teacher.margin = guard.margin
-            teacher.message = 'CHECK MODE: limit guard active. Move freely and check the behaviour at the edge.'
+            teacher.message = (f'CHECK MODE (profile {guard.profile}): limit guard active. '
+                               'Move freely and check the behaviour at the edge.')
 
             def notify(text: str, t: Teacher = teacher) -> None:
                 t.message = f'CHECK MODE: {text}'

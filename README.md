@@ -470,6 +470,21 @@ Areas inside the outline that the mount must not enter, for example where the ba
 tube hits the pier. In `teach_limits.py` press `n` to start a zone, `m` for its corners and `e`
 to end it. `--edit` loads an existing file, e.g. to add zones later.
 
+#### Profiles
+
+Different setups on the same mount (long tube, small camera) can have their own areas:
+
+```yaml
+axis_limits:
+    profiles:
+        tube: limits_tube.yaml
+        camera: limits_camera.yaml
+    profile: tube                 # used at start
+```
+
+Teach each one with `./teach_limits.py --profile camera`. All profiles must be taught at the
+same home position.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

@@ -61,6 +61,21 @@ def get_settings(config_data: dict[str, Any]) -> dict[str, Any] | None:
         return None
     settings = dict(DEFAULTS)
     settings.update(section)
+    # Profiles: several taught areas, e.g. for different setups
+    # (long tube / camera only). Without profiles, file is the only profile.
+    profiles = settings.get('profiles') or {}
+    if not isinstance(profiles, dict):
+        raise LimitError('axis_limits.profiles must map profile names to file names.')
+    if not profiles and settings.get('file'):
+        profiles = {'default': settings['file']}
+    settings['profiles'] = dict(profiles)
+    if profiles:
+        active = settings.get('profile') or next(iter(profiles))
+        if active not in profiles:
+            names = ', '.join(profiles)
+            raise LimitError(f'axis_limits.profile "{active}" does not exist. Available: {names}')
+        settings['profile'] = active
+        settings['file'] = profiles[active]
     return settings
 
 # ---------------------------------------------------------------------------
@@ -235,6 +250,7 @@ class AxisLimitGuard:
         self.poly: list[Point] = []
         self.holes: list[list[Point]] = []
         self.home: Point = (0.0, 0.0)
+        self.profile = str(settings.get('profile') or 'default')
         self._load_geometry(limits)
         self.margin = rad(float(settings['margin_degrees']))
 
@@ -284,12 +300,12 @@ class AxisLimitGuard:
                   f'{deg(-c):.2f} degrees). Only moves back inside are possible.')
 
         home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
-        print(f'Safe area active: outline with {len(self.poly)} points, '
+        print(f'Safe area active (profile {self.profile}): outline with {len(self.poly)} points, '
               f'{len(self.holes)} exclusion zone(s), safety margin {settings["margin_degrees"]} degrees.')
         print(f'  Current position relative to home: axis 1 {deg(p1 - home[0]):+.2f}, '
               f'axis 2 {deg(p2 - home[1]):+.2f} degrees, distance to the edge {deg(c):.2f} degrees.')
 
-    # --- Geometry ---------------------------------------------------------
+    # --- Geometry / profiles ----------------------------------------------
 
     def _load_geometry(self, limits: dict[str, Any]) -> None:
         '''Take outline, exclusion zones and home position from a limits file (after validating them).'''
