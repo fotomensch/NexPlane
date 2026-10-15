@@ -12,6 +12,7 @@ import yaml
 from typing import Any
 
 import align
+import axis_limits
 import astronomical
 import config
 import gui
@@ -122,6 +123,9 @@ def main() -> None:
                    '(re)started AFTER switching on the controller, and on the right port (ls /dev/ttyUSB*)? '
                    'Is no other software (SynScan app) connected? Then restart NexPlane.')
             raise SystemExit('\n' + msg)
+
+        # Enable axis soft limits if configured in config.yaml (the guard hooks into the telescope object).
+        axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
 
         # Tracking controller, sends commands to the telescope.
         target_tracker = tracker.Tracker(telescope, kp, ki, kd, (args.mount_mode == 'altaz'))
