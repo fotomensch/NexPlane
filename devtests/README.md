@@ -26,6 +26,7 @@ Die meisten enden mit `FEHLER: keine` bzw. `Fehler: 0`. Aus einem leeren Arbeits
 | `test_prof_cli.py` | Profile auf der Kommandozeile |
 | `test_plot.py` | Vorschau-SVG; zweites Argument = Ausgabeverzeichnis |
 | `test_ui.py`, `test_ui_excl.py` | `teach_limits.py` im Terminal; braucht `pexpect`, `pyte`; zweites Argument = Ausgabedatei |
+| `test_hootl_limits.py` | Grenzen der echten Montierung im Simulator: mit `--hootl` übersprungen, sonst Fehler mit beiden Schrittzahlen |
 | `test_i18n.py` | Jeder Text der Browser-GUI hat einen deutschen Eintrag in `i18n_de.js`; `--list` gibt alle Vorlagen aus |
 
 ## Simulator-Tests (`sim/`)

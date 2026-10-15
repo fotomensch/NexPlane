@@ -19,7 +19,7 @@ each feature does, how it works, how to try it and how well it has been tested.
 
 - [Test status](#test-status)
 - [Feature overview](#feature-overview)
-- [Mount safety (1–3, 23, 24, 27)](#mount-safety)
+- [Mount safety (1–3, 23, 24, 27, 29)](#mount-safety)
 - [Equatorial mode (4, 5, 21)](#equatorial-mode)
 - [Browser GUI (6–9)](#browser-gui)
 - [Pointing and alignment (10–14, 25, 26, 28)](#pointing-and-alignment)
@@ -84,6 +84,7 @@ under a real sky.
 | 26 | Rough test alignment at home (test mode) | `nexplane.py`, `webgui.*` | 1, 7 | Sim, bench |
 | 27 | Axis position relative to home in the GUI | `nexplane.py`, `webgui.*` | 1, 6 | Sim |
 | 28 | Own focal lengths for sync points (fork only) | `focal_lengths.py`, `webgui.*` | 13 | Sim |
+| 29 | Dry runs with `--hootl` and real limits, clearer limit errors (fork only) | `axis_limits.py`, `nexplane.py` | 1 | Sim |
 
 `webgui.*` means `webgui.py` and `webgui.html`.
 
@@ -176,6 +177,14 @@ The safe-area card shows "Position relative to home: axis 1 …°, axis 2 …°"
 stands at home but this is not about 0°/0°, the motor counters do not match (the mount was powered
 on elsewhere, or moved by hand with the clutches open) and both the map and new limit vertices
 would be shifted.
+
+### 29 Dry runs with `--hootl` and real limits
+
+The simulated mount has 9,216,000 steps per revolution, a real EQ5 9,011,200, so limits taught on
+the real mount cannot apply to it. With `--hootl` such limits are skipped with a warning and the
+dry run goes on with the real `config.yaml`; limits taught on the simulator are used as usual. On a
+real mount the error names both step counts, and any problem with the limits at start ends
+NexPlane with a message instead of a traceback. Fork only for now; branch `pr/30-hootl-limits`.
 
 ## Equatorial mode
 
