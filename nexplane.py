@@ -219,8 +219,18 @@ def main() -> None:
                 time.sleep(1.0)   # Give the browser a moment to fetch the message
             raise SystemExit('\n' + str(msg))
 
-        # Enable axis soft limits if configured in config.yaml.
-        limit_guard = axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
+        # Enable axis soft limits if configured in config.yaml. Any problem with them ends the
+        # program with a message (also shown in the browser) rather than a traceback.
+        try:
+            limit_guard = axis_limits.install_from_config(
+                telescope, config_data, args.telescope_protocol, simulated=args.run_hootl,
+                notify=gui_iface.notify if args.web else print)
+        except axis_limits.LimitError as e:
+            limit_msg = of_exception(e)
+            if args.web:
+                gui_iface.notify(limit_msg)
+                time.sleep(1.0)   # Give the browser a moment to fetch the message
+            raise SystemExit('\n' + str(limit_msg))
         if limit_guard is not None and args.web:
             limit_guard.notify = gui_iface.notify
 

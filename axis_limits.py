@@ -319,10 +319,9 @@ class AxisLimitGuard:
         mount._inquire_position = self._inquire_position  # type: ignore[method-assign]
         mount._slew_axis = self._slew_axis  # type: ignore[method-assign]
 
-        if int(limits['cpr'][1]) != mount.cpr[1] or int(limits['cpr'][2]) != mount.cpr[2]:
-            raise LimitError(Msg('The steps per revolution do not match the limits file (different motor '
-                                 'controller, firmware or simulator?). Please teach the limits again, or '
-                                 'comment out axis_limits for simulator tests.'))
+        mismatch = steps_mismatch(limits, mount)
+        if mismatch is not None:
+            raise LimitError(mismatch)
 
         p1 = self._inquire_position(1)
         p2 = self._inquire_position(2)
@@ -628,8 +627,29 @@ def unwrap_pos(v: float | None) -> float:
     assert v is not None
     return v
 
-def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_protocol: str) -> AxisLimitGuard | None:
-    '''Activates the safe area if config.yaml contains an axis_limits section.'''
+def steps_mismatch(limits: dict[str, Any], mount: skywatcher.SkyWatcher) -> Msg | None:
+    '''
+    Error message if the mount's steps per revolution differ from those the limits file was taught
+    with (then the taught positions mean nothing on this mount), else None.
+    '''
+    if int(limits['cpr'][1]) == mount.cpr[1] and int(limits['cpr'][2]) == mount.cpr[2]:
+        return None
+    return Msg('The steps per revolution do not match the limits file: the mount reports {mount}, the '
+               'file was taught with {file} (different motor controller, firmware or simulator?). Please '
+               'teach the limits again, or comment out axis_limits for simulator tests.',
+               mount=f'{mount.cpr[1]}/{mount.cpr[2]}', file=f'{int(limits["cpr"][1])}/{int(limits["cpr"][2])}')
+
+def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_protocol: str,
+                        simulated: bool = False,
+                        notify: Callable[[Text], None] = print) -> AxisLimitGuard | None:
+    '''
+    Activates the safe area if config.yaml contains an axis_limits section.
+
+    With a simulated mount (simulated=True) nothing can collide, and limits taught on a real mount
+    cannot match the simulator's steps per revolution. Such limits are then skipped with a warning
+    (via notify), so a dry run works with the real config.yaml. Limits taught on the simulator
+    are used as usual.
+    '''
     settings = get_settings(config_data)
     if settings is None or not settings['file']:
         print('WARNING: No axis limits configured (axis_limits.file in config.yaml).')
@@ -637,7 +657,12 @@ def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_p
     if not isinstance(telescope, skywatcher.SkyWatcher):
         raise LimitError(Msg('Axis limits are only supported for Sky-Watcher protocols, not {protocol}.',
                              protocol=telescope_protocol))
-    limits = load_limits(resolve_path(settings['file']))
+    path = resolve_path(settings['file'])
+    limits = load_limits(path)
+    if simulated and steps_mismatch(limits, telescope) is not None:
+        notify(Msg('Simulated mount: the safe area in {path} was taught on a different mount and is not '
+                   'used in this run.', path=os.path.basename(path)))
+        return None
     return AxisLimitGuard(telescope, limits, settings)
 
 def profile_path(config_data: dict[str, Any], name: str) -> str:
