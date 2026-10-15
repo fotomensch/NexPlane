@@ -429,6 +429,10 @@ def main() -> None:
             if first and p_az is not None and p_el is not None:
                 # First point of this setup (no landmark or after rough alignment): do a full alignment
                 ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
+                pole_err = eq_flip.pole_problem(dec_t)
+                if pole_err:
+                    notify(pole_err)
+                    return False
                 new_ra_cal, new_dec_cal, side = eq_flip.calibrate(ra_t, dec_t, raw_ra, raw_dec, home_dec_raw)
                 pointing.set_calibration(new_ra_cal, new_dec_cal)
                 pointing.start_session(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '',
@@ -630,6 +634,9 @@ def main() -> None:
                     try:
                         real_azm, real_alt = align.get_landmark_azm_alt(align_request, config_data, observatory_location)
                         real_ra, real_dec = util.altaz_to_radec(real_alt, real_azm, observatory_location, util.get_current_time())
+                        pole_err = eq_flip.pole_problem(real_dec)
+                        if pole_err:
+                            raise ValueError(pole_err)
                         raw_ra, raw_dec = telescope.get_ra_dec()
                         new_ra_cal, new_dec_cal, align_side = eq_flip.calibrate(real_ra, real_dec, raw_ra, raw_dec, home_dec_raw)
                         pointing.set_calibration(new_ra_cal, new_dec_cal)

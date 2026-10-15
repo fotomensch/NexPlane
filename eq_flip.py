@@ -41,6 +41,21 @@ def _wrap(x: float, lo: float = -math.pi) -> float:
 def other_side(side: str) -> str:
     return SIDE_B if side == SIDE_A else SIDE_A
 
+# An alignment target this close to the celestial pole cannot determine the rotation of the
+# RA axis (any RA position points almost at the same spot), nor reliably the pier side.
+POLE_ALIGN_MIN_DIST = math.radians(10.0)
+
+def pole_problem(dec_true: float) -> Msg | None:
+    '''Error message if dec_true is too close to a celestial pole for a first alignment, else None.'''
+    dist = math.pi / 2 - abs(dec_true)
+    if dist >= POLE_ALIGN_MIN_DIST:
+        return None
+    return Msg('The target is only {dist:.1f}° from the celestial pole. There the telescope points at almost the '
+               'same spot in every position of the RA axis, so the rotation of the RA axis (and the pier side) '
+               'cannot be determined: the map and the red areas would be rotated. Please use a target at least '
+               '{min:.0f}° from the pole (landmark, star, planet or aircraft).',
+               dist=math.degrees(dist), min=math.degrees(POLE_ALIGN_MIN_DIST))
+
 def calibrate(ra_true: float, dec_true: float, ra_raw: float, dec_raw: float,
               home_dec_raw: float | None = None) -> tuple[float, float, str]:
     '''
