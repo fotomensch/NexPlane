@@ -110,7 +110,8 @@ class Tracker:
         else:
             self.telescope.slew_radec(slew_rate_azm_or_ra, slew_rate_alt_or_dec)
 
-    def go_raw(self, target_ra_raw: float, target_dec_raw: float, max_rate: float) -> None:
+    def go_raw(self, target_ra_raw: float, target_dec_raw: float, max_rate: float,
+               actual: tuple[float, float] | None = None) -> None:
         '''
         Like go(), but for EQ mounts with an already chosen axis configuration
         (see eq_flip.py): the target values are not wrapped, so the mount stays
@@ -119,7 +120,7 @@ class Tracker:
         '''
         assert not self.altaz_mode
         self.stopped = False
-        actual_ra, actual_dec = self.telescope.get_ra_dec()
+        actual_ra, actual_dec = actual if actual is not None else self.telescope.get_ra_dec()
         rate_ra = self.azm_or_ra_controller.control(target_ra_raw, actual_ra)
         rate_dec = self.alt_or_dec_controller.control(target_dec_raw, actual_dec)
 

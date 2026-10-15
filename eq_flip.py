@@ -90,6 +90,8 @@ class EqPointing:
         self.side: str | None = None       # selected side for the current target
         self.side_since = 0.0
         self.last_scope_side = SIDE_A
+        self.last_raw: tuple[float, float] | None = None   # last read position (ra_raw, dec_raw)
+        self.last_raw_t = 0.0
 
     # ------------------------------------------------------------------
     # Position
@@ -108,6 +110,8 @@ class EqPointing:
     def scope(self) -> tuple[float, float, str]:
         '''Current telescope position (ra, dec, side), correct on both sides.'''
         ra_raw, dec_raw = self.telescope.get_ra_dec()
+        self.last_raw = (ra_raw, dec_raw)
+        self.last_raw_t = time.monotonic()
         ra, dec, side = self.raw_to_radec(ra_raw, dec_raw)
         self.last_scope_side = side
         return ra, dec, side
@@ -251,7 +255,14 @@ class EqPointing:
         predicted target position in dt seconds; it is only needed for side selection
         for a new target. Returns the selected position.
         '''
-        ra_raw_now, dec_raw_now = self.telescope.get_ra_dec()
+        # The position was usually just read in scope(); do not query again
+        # (each query costs two commands to the controller and slows down the control loop).
+        if self.last_raw is not None and time.monotonic() - self.last_raw_t < 0.15:
+            ra_raw_now, dec_raw_now = self.last_raw
+        else:
+            ra_raw_now, dec_raw_now = self.telescope.get_ra_dec()
+            self.last_raw = (ra_raw_now, dec_raw_now)
+            self.last_raw_t = time.monotonic()
         cand = self.choose(self.candidates(ra_t, dec_t, ra_raw_now, dec_raw_now), ra_raw_now, future)
-        tracker.go_raw(cand.ra_raw, cand.dec_raw, self.max_rate)
+        tracker.go_raw(cand.ra_raw, cand.dec_raw, self.max_rate, (ra_raw_now, dec_raw_now))
         return cand
