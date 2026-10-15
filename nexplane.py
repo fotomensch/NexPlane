@@ -323,6 +323,13 @@ def main() -> None:
                         if warning:
                             notify(warning)
 
+                # Axis position relative to the taught home position (shown in the browser)
+                if args.web and limit_guard is not None:
+                    axis_pos = (limit_guard.last_pos[1], limit_guard.last_pos[2])
+                    if axis_pos[0] is not None and axis_pos[1] is not None:
+                        gui_iface.set_axis_rel(math.degrees(float(axis_pos[0]) - limit_guard.home[0]),
+                                               math.degrees(float(axis_pos[1]) - limit_guard.home[1]))
+
                 new_profile = gui_iface.pop_profile_request() if (args.web and limit_guard is not None) else None
                 if new_profile is not None and limit_guard is not None:
                     target_tracker.stop()

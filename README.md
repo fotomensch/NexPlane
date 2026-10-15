@@ -533,6 +533,10 @@ is stopped for this).
 landmark outside the area. A red banner is shown and tracking is blocked until the limits are
 switched on again; the wrong-direction stop stays active.
 
+"Position relative to home" shows the axis angles relative to the taught home position. At
+home it must be about 0°/0°; otherwise the mount was switched on elsewhere and the limits are
+shifted.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

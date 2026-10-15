@@ -106,6 +106,7 @@ class WebGui:
         self.profile = ''
         self.profile_request: str | None = None
         self.limits_off = False
+        self.axis_rel: list[float] | None = None   # axis position relative to the taught home (degrees)
 
         # Observer's geocentric position and directions (for plane latitude/longitude)
         self.obs_xyz = numpy.array([c.to(units.m).value for c in observatory_location.to_geocentric()])
@@ -234,6 +235,10 @@ class WebGui:
             req, self.profile_request = self.profile_request, None
             return req
 
+    def set_axis_rel(self, a1: float, a2: float) -> None:
+        with self.lock:
+            self.axis_rel = [round(a1, 2), round(a2, 2)]
+
     def get_limits_off(self) -> bool:
         with self.lock:
             return self.limits_off and bool(self.profiles)
@@ -306,6 +311,7 @@ class WebGui:
                 'auto_flip': self.auto_flip,
                 'profiles': {'list': self.profiles, 'active': self.profile},
                 'limits_off': self.limits_off and bool(self.profiles),
+                'axis_rel': self.axis_rel,
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
                            'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),

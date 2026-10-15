@@ -121,6 +121,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <h2>Safe area</h2>
       <div class="kv" style="margin-bottom:8px">
         <span>Profile</span><span id="lim-active">–</span>
+        <span>Position relative to home</span><span id="lim-axes">–</span>
       </div>
       <div class="row" id="prof-row" style="margin-bottom:8px">
         <select id="prof-sel" class="btn" style="flex:1;min-width:0"></select>
@@ -397,6 +398,8 @@ function updatePanel() {
     $('prof-sel').dataset.key = pkey;
     $('prof-sel').innerHTML = P.list.map(n => `<option value="${esc(n)}" ${n === P.active ? 'selected' : ''}>${esc(n)}${n === P.active ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
   }
+  const signed = v => (v >= 0 ? '+' : '') + fmt(v, 2);
+  $('lim-axes').textContent = S.axis_rel ? T('Axis 1 {a1}° · axis 2 {a2}°', {a1: signed(S.axis_rel[0]), a2: signed(S.axis_rel[1])}) : '–';
   const M = S.manual || {};
   $('manual-card').style.display = M.available ? '' : 'none';
   if (M.available) {
