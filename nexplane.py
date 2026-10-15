@@ -312,6 +312,17 @@ def main() -> None:
                     target_tracker.set_gains(kp, ki, kd)
                 last_gain_changes = gain_changes
 
+                if args.web and limit_guard is not None:
+                    want_off = gui_iface.get_limits_off()
+                    if want_off != limit_guard.bypass:
+                        if manual is not None:
+                            manual.stop()
+                        warning = limit_guard.set_bypass(want_off)
+                        notify(Msg('WARNING: Safe area DISABLED (at your own risk). Keep a hand on the power switch!')
+                               if want_off else Msg('Safe area active again.'))
+                        if warning:
+                            notify(warning)
+
                 new_profile = gui_iface.pop_profile_request() if (args.web and limit_guard is not None) else None
                 if new_profile is not None and limit_guard is not None:
                     target_tracker.stop()

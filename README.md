@@ -529,6 +529,10 @@ Aircraft are only tracked after an alignment.
 The card "Safe area" shows the active limits profile and switches between profiles (the mount
 is stopped for this).
 
+"Disable safe area" switches the axis limits off at your own risk, for example to align on a
+landmark outside the area. A red banner is shown and tracking is blocked until the limits are
+switched on again; the wrong-direction stop stays active.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

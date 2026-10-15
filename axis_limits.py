@@ -268,6 +268,9 @@ class AxisLimitGuard:
         self.desired: dict[int, float] = {1: 0.0, 2: 0.0}
         self.limited = False
         self.tripped = False
+        # Monitoring disabled at own risk (e.g. to point at a target outside the area).
+        # The direction check (emergency stop on wrong direction of rotation) stays active.
+        self.bypass = False
         # Messages during operation (e.g. can be redirected to a terminal UI).
         self.notify: Callable[[Text], None] = print
         # Measured time between two motion commands per axis (initial value deliberately pessimistic).
@@ -418,6 +421,25 @@ class AxisLimitGuard:
             self.wrong_way[axis] = 0.0
         return p
 
+    def set_bypass(self, off: bool) -> Msg | None:
+        '''Disable/enable monitoring. Returns a warning on enabling, if applicable.'''
+        if off == self.bypass:
+            return None
+        self.bypass = off
+        self.limited = False
+        self.desired = {1: 0.0, 2: 0.0}
+        if off:
+            return None
+        try:
+            p = (self._inquire_position(1), self._inquire_position(2))
+        except Exception:
+            return None
+        c = self.clearance_at(p)
+        if c < 0:
+            return Msg('The mount is outside the safe area (by {d:.1f} degrees). '
+                       'Only moves back into the allowed area are possible.', d=deg(-c))
+        return None
+
     def _slew_axis(self, axis: int, rate: float) -> None:
         '''
         Replaces SkyWatcher._slew_axis: scales the commanded rates of both axes down so that the
@@ -426,6 +448,12 @@ class AxisLimitGuard:
         if self.tripped:
             self._orig_slew(axis, 0.0)
             return
+        if self.bypass:
+            self.desired[axis] = rate
+            self.last_slew_time[axis] = time.monotonic()
+            self._orig_slew(axis, rate)
+            return
+
         now = time.monotonic()
         prev_slew = self.last_slew_time[axis]
         if prev_slew is not None:

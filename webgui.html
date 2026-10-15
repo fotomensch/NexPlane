@@ -38,6 +38,8 @@ header h1 { font-size: 16px; margin: 0 6px 0 0; letter-spacing: .5px; }
 .spacer { flex: 1; }
 #banner { display: none; background: var(--warn); color: #000; font-weight: 700; text-align: center; padding: 8px; }
 #banner.show { display: block; }
+#limbanner { display: none; background: #d01010; color: #fff; font-weight: 700; text-align: center; padding: 8px; }
+#limbanner.show { display: block; }
 main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
 #view { position: relative; min-height: 0; }
 #sky, #map { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -106,6 +108,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
   <label class="chk"><input type="checkbox" id="opt-red"> Red light</label>
   <select id="opt-lang" class="btn" title="Sprache / Language" style="padding:2px 4px"><option value="de">DE</option><option value="en">EN</option></select>
 </header>
+<div id="limbanner">SAFE AREA DISABLED – AT YOUR OWN RISK, KEEP A HAND ON THE POWER SWITCH. Tracking is blocked.</div>
 <div id="banner">CONNECTION TO THE MOUNT DISTURBED – PREVENT COLLISIONS, CUT POWER IF NEEDED</div>
 <main>
   <div id="view">
@@ -128,6 +131,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <h2>Control &amp; alignment</h2>
       <div id="align-status" style="margin-bottom:8px"></div>
       <button class="btn danger" id="btn-allstop" style="width:100%;font-weight:700;margin-bottom:10px">STOP (Esc)</button>
+      <button class="btn" id="btn-limoff" style="width:100%;margin-bottom:10px;display:none">Disable safe area (at your own risk)</button>
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div class="pad" id="jogpad">
           <span></span><button class="btn" data-jog="0,1" title="Dec +">▲</button><span></span>
@@ -370,6 +374,10 @@ function angDist(a, b) {
 
 function updatePanel() {
   $('banner').classList.toggle('show', !!S.comm_failure);
+  $('limbanner').classList.toggle('show', !!S.limits_off);
+  $('btn-limoff').style.display = (S.profiles && S.profiles.active) ? '' : 'none';
+  $('btn-limoff').textContent = S.limits_off ? T('Re-enable safe area') : T('Disable safe area (at your own risk)');
+  $('btn-limoff').classList.toggle('danger', !!S.limits_off);
   $('h-scope').textContent = S.telescope ? `Az ${fmt(S.telescope.az)}°  El ${fmt(S.telescope.el)}°` : '–';
   const t = S.planes.find(p => p.hex === S.tracked);
   const fx = S.fixed_target;
@@ -528,6 +536,15 @@ document.addEventListener('keyup', e => {
   arrows.delete(e.key); setJog(arrowsToDir()); e.preventDefault();
 });
 $('btn-allstop').onclick = () => { setJog([0, 0]); api('stop'); };
+$('btn-limoff').onclick = () => {
+  if (!S) return;
+  if (S.limits_off) { api('limits_off', {off: false}); return; }
+  if (confirm(T('Disable the safe area?\n\nOutline and exclusion zones are NO LONGER monitored. The mount can hit ' +
+                'the tripod or pier. Only with a hand on the power switch!\n\nAircraft tracking is blocked until ' +
+                'the safe area is re-enabled.'))) {
+    setJog([0, 0]); api('limits_off', {off: true, confirm: true});
+  }
+};
 $('btn-home').onclick = () => { if (confirm(T('Go to home position?'))) api('home'); };
 $('align-sel').onchange = () => { $('align-sky').style.display = $('align-sel').value === '__sky__' ? '' : 'none'; };
 $('btn-align').onclick = () => {
