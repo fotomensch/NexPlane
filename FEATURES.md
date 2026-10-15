@@ -22,7 +22,7 @@ each feature does, how it works, how to try it and how well it has been tested.
 - [Mount safety (1–3, 23, 24, 27)](#mount-safety)
 - [Equatorial mode (4, 5, 21)](#equatorial-mode)
 - [Browser GUI (6–9)](#browser-gui)
-- [Pointing and alignment (10–14, 25, 26)](#pointing-and-alignment)
+- [Pointing and alignment (10–14, 25, 26, 28)](#pointing-and-alignment)
 - [Gamepad (15)](#gamepad)
 - [Places, GPS and elevation (16–18)](#places-gps-and-elevation)
 - [Tools and fixes (19, 20, 22)](#tools-and-fixes)
@@ -83,6 +83,7 @@ under a real sky.
 | 25 | Refuse alignment targets near the celestial pole | `eq_flip.py`, `nexplane.py` | 4, 7 | Sim |
 | 26 | Rough test alignment at home (test mode) | `nexplane.py`, `webgui.*` | 1, 7 | Sim, bench |
 | 27 | Axis position relative to home in the GUI | `nexplane.py`, `webgui.*` | 1, 6 | Sim |
+| 28 | Own focal lengths for sync points (fork only) | `focal_lengths.py`, `webgui.*` | 13 | Sim |
 
 `webgui.*` means `webgui.py` and `webgui.html`.
 
@@ -337,6 +338,14 @@ button). Its weight assumes centring to 3% of the frame width (APS-C, 23.5 mm, `
 plus 0.05° ADS-B error. In the simulator a coarse 150 mm point 1° off plus four 600 mm points gave
 0.04° mean error instead of 0.21° unweighted. Any point can be deleted from the list.
 
+### 28 Own focal lengths for sync points
+
+Next to the focal length list in the Correction card, another focal length can be typed in and
+added ("Add", or Enter); it is selected right away. Own focal lengths are kept in
+`focal_lengths.yaml` next to `config.yaml` (whole mm, 10–5000) and can be removed again with ✕;
+the ones from `focal_lengths_mm` in `config.yaml` can only be changed there. The gamepad Options
+button cycles through all of them. Fork only for now; branch `pr/29-custom-focal-lengths`.
+
 ### 14 Forget alignment
 
 Discards points, model and correction and returns to "not aligned"; optionally also deletes
@@ -506,6 +515,7 @@ All next to `config.yaml`:
 | `align.yaml` | `align.py`, alignment in the browser | upstream, 7 |
 | `home_direction.yaml` | every alignment with a taught home | 12 |
 | `places.yaml` | places editor | 16 |
+| `focal_lengths.yaml` | own focal lengths (browser) | 28 |
 | `logs/*.csv` | tracking and sync point logs | 22 |
 
 Config keys and file names are English. Setups that used the earlier German names

@@ -61,6 +61,7 @@ printf 'web_port: 8802\n' >> config.yaml
 | `refine_ui.py` | Grenzen verfeinern im Browser | Playwright |
 | `pad_it.py`, `stick_it.py` | Gamepad-Belegung, Korrektur beim Verfolgen | Gamepad-FIFO, Flugzeuge |
 | `aim_it.py`, `model_it.py` | Ausrichtung ohne Landmarke, Polfehler-Modell | Flugzeuge, ggf. FIFO |
+| `focal_ui.py` | Eigene Brennweiten: hinzufügen, entfernen, Gamepad Options | Playwright, Gamepad-FIFO, `--alignment testflip_align.yaml` |
 | `lang_ui.py` | Alle Texte in der gewählten Sprache (DE/EN), auch Meldungen; `-v` zeigt sie an | Playwright |
 | `places_ui.py`, `elev_ui.py`, `fs_ui.py` | Orte-Editor, Höhenabfrage, Vollbild | Playwright; `places_ui.py` nutzt `sim/fakebin/mmcli` (GPS) im `PATH` |
 

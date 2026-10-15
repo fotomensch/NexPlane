@@ -402,5 +402,13 @@ window.NEXPLANE_DE = {
   "Messages": "Meldungen",
   "Controller": "Regler",
   "Keys as before: R/F, T/G, Y/U": "Tasten wie bisher: R/F, T/G, Y/U",
-  "Quit NexPlane": "NexPlane beenden"
+  "Quit NexPlane": "NexPlane beenden",
+  "Remove this focal length from the list (only focal lengths added here)": "Diese Brennweite aus der Liste entfernen (nur hier hinzugefügte)",
+  "other (mm)": "andere (mm)",
+  "Add": "Hinzufügen",
+  "Add the focal length to the list and select it (kept in focal_lengths.yaml)": "Brennweite zur Liste hinzufügen und auswählen (wird in focal_lengths.yaml gespeichert)",
+  "Enter the focal length in mm as a number": "Brennweite in mm als Zahl eingeben",
+  "Focal length: {lo:.0f} to {hi:.0f} mm": "Brennweite: {lo} bis {hi} mm",
+  "{mm:.0f} mm is already in the list.": "{mm} mm steht schon in der Liste.",
+  "{mm:.0f} mm comes from config.yaml (focal_lengths_mm) and can only be removed there.": "{mm} mm kommt aus config.yaml (focal_lengths_mm) und lässt sich nur dort entfernen."
 };

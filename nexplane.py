@@ -871,10 +871,11 @@ def main() -> None:
                                 pad.rumble(1.0, 1.0, 90, 3)
                         elif press == 'options':
                             cur = gui_iface.get_focal()
-                            nxt = next((f for f in focal_steps if f > cur + 1), focal_steps[0])
+                            steps = gui_iface.get_focal_steps()   # config.yaml plus the ones added in the browser
+                            nxt = next((f for f in steps if f > cur + 1), steps[0])
                             gui_iface.command('set_focal', {'mm': nxt})
                             notify(Msg('Focal length for sync points: {mm:.0f} mm (gamepad).', mm=nxt))
-                            pad.rumble(0.4, 0.4, 100, focal_steps.index(nxt) + 1)
+                            pad.rumble(0.4, 0.4, 100, min(steps.index(nxt) + 1, 5))   # vibrates once per list position, at most 5 times
                         elif press == 'share' and gui_iface.refine_is_active():
                             gui_iface.queue_refine('add')
                         elif press == 'square':
