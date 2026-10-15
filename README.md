@@ -526,6 +526,9 @@ point the telescope at a landmark (another location from `config.yaml`) or at a 
 then press "Telescope points at it now – align". The alignment is saved as `align.yaml`.
 Aircraft are only tracked after an alignment.
 
+The card "Safe area" shows the active limits profile and switches between profiles (the mount
+is stopped for this).
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

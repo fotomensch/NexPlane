@@ -250,6 +250,11 @@ def main() -> None:
             gui_iface.enable_manual(Msg('taught home position') if home_is_taught else Msg('position at NexPlane start'),
                                     align_targets, bool(args.landmark or args.alignment), aligned_text)
 
+        # Safe-zone profiles (browser).
+        limit_settings = axis_limits.get_settings(config_data)
+        if args.web and limit_guard is not None and limit_settings is not None:
+            gui_iface.set_profiles(list(limit_settings['profiles']), limit_guard.profile)
+
         def write_alignment(new_ra_cal: float, new_dec_cal: float) -> None:
             '''Save the calibration in the same format as align.py (loadable with --alignment).'''
             with open(alignment_file, 'w') as f:
@@ -306,6 +311,24 @@ def main() -> None:
                     print('kp =', kp, 'ki =', ki, 'kd =', kd)
                     target_tracker.set_gains(kp, ki, kd)
                 last_gain_changes = gain_changes
+
+                new_profile = gui_iface.pop_profile_request() if (args.web and limit_guard is not None) else None
+                if new_profile is not None and limit_guard is not None:
+                    target_tracker.stop()
+                    if manual is not None:
+                        manual.stop()
+                    try:
+                        warning = limit_guard.set_profile(new_profile, axis_limits.load_profile(config_data, new_profile))
+                        gui_iface.set_profiles(list(limit_settings['profiles']) if limit_settings else [new_profile],
+                                               limit_guard.profile)
+                        if pointing is not None:
+                            pointing.reset()
+                        notify(Msg('Profile {name} active: {points} outline points, {zones} exclusion zone(s).',
+                                   name=new_profile, points=len(limit_guard.poly), zones=len(limit_guard.holes)))
+                        if warning:
+                            notify(warning)
+                    except axis_limits.LimitError as e:
+                        notify(Msg('Changing the profile is not possible: {error}', error=of_exception(e)))
 
                 align_request = gui_iface.pop_align_request() if manual is not None else None
                 jog = gui_iface.get_jog() if manual is not None else None

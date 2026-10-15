@@ -328,6 +328,31 @@ class AxisLimitGuard:
         '''Distance from p to the boundary of the permitted area (incl. safety margin), >= 0 permitted.'''
         return clearance(p, self.poly, self.margin, self.holes)
 
+    def set_profile(self, name: str, limits: dict[str, Any]) -> Msg | None:
+        '''
+        Activate another profile (another setup). Returns a warning if the
+        mount is currently outside the new area (then only moves inward
+        are possible).
+        '''
+        if int(limits['cpr'][1]) != self.mount.cpr[1] or int(limits['cpr'][2]) != self.mount.cpr[2]:
+            raise LimitError(Msg('Profile {name}: the steps per revolution do not match the mount. '
+                                 'Please teach it again.', name=name))
+        new_home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
+        tol = rad(float(self.settings['home_tolerance_degrees']))
+        if abs(new_home[0] - self.home[0]) > tol or abs(new_home[1] - self.home[1]) > tol:
+            raise LimitError(Msg('Profile {name} was taught with a different home position than the active '
+                                 'profile. Please teach both profiles at the same home position after '
+                                 'switching on.', name=name))
+        self._load_geometry(limits)
+        self.profile = name
+        self.limited = False
+        p = (unwrap_pos(self.last_pos[1]), unwrap_pos(self.last_pos[2]))
+        c = self.clearance_at(p)
+        if c < 0:
+            return Msg('The mount is outside the area of profile {name} (by {d:.1f} degrees). '
+                       'Only moves back into the allowed area are possible.', name=name, d=deg(-c))
+        return None
+
     # --- Helper functions -------------------------------------------------
 
     def _emergency_stop(self) -> None:
@@ -449,6 +474,10 @@ class AxisLimitGuard:
         if abs(new[other]) < abs(cur_other) - 1e-12 or (new[other] == 0.0 and cur_other != 0.0):
             self._orig_slew(other, new[other])
 
+def unwrap_pos(v: float | None) -> float:
+    assert v is not None
+    return v
+
 def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_protocol: str) -> AxisLimitGuard | None:
     '''Activates the safe area if config.yaml contains an axis_limits section.'''
     settings = get_settings(config_data)
@@ -460,3 +489,9 @@ def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_p
                              protocol=telescope_protocol))
     limits = load_limits(resolve_path(settings['file']))
     return AxisLimitGuard(telescope, limits, settings)
+
+def load_profile(config_data: dict[str, Any], name: str) -> dict[str, Any]:
+    settings = get_settings(config_data)
+    if settings is None or name not in settings['profiles']:
+        raise LimitError(Msg('Unknown profile: {name}', name=name))
+    return load_limits(resolve_path(settings['profiles'][name]))

@@ -114,6 +114,16 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
     <div id="maperr">Map not available (map library could not be loaded).<br>The sky view still works.</div>
   </div>
   <aside>
+    <div class="card" id="limits-card">
+      <h2>Safe area</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Profile</span><span id="lim-active">–</span>
+      </div>
+      <div class="row" id="prof-row" style="margin-bottom:8px">
+        <select id="prof-sel" class="btn" style="flex:1;min-width:0"></select>
+        <button class="btn" id="btn-prof">Activate</button>
+      </div>
+    </div>
     <div class="card" id="manual-card" style="display:none">
       <h2>Control &amp; alignment</h2>
       <div id="align-status" style="margin-bottom:8px"></div>
@@ -371,6 +381,14 @@ function updatePanel() {
     $('f-side').textContent = fx.side ? T('Side {side}', {side: fx.side}) : T('being determined …');
     $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
   }
+  const P = S.profiles || {list: [], active: ''};
+  $('lim-active').textContent = P.active || T('no safe area configured');
+  $('prof-row').style.display = P.list.length > 1 ? '' : 'none';
+  const pkey = LANG + '|' + P.active + '|' + P.list.join('|');
+  if ($('prof-sel').dataset.key !== pkey) {
+    $('prof-sel').dataset.key = pkey;
+    $('prof-sel').innerHTML = P.list.map(n => `<option value="${esc(n)}" ${n === P.active ? 'selected' : ''}>${esc(n)}${n === P.active ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+  }
   const M = S.manual || {};
   $('manual-card').style.display = M.available ? '' : 'none';
   if (M.available) {
@@ -452,6 +470,12 @@ function flightNumber(callsign) {
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
 
 $('plist').addEventListener('click', e => { const tr = e.target.closest('tr[data-hex]'); if (tr) api('track', {hex: tr.dataset.hex}); });
+// ---- Profiles ----
+$('btn-prof').onclick = () => {
+  const name = $('prof-sel').value;
+  if (!S || !S.profiles || name === S.profiles.active) { addLocalMsg(T('Please choose a different profile.')); return; }
+  if (confirm(T('Activate profile "{name}"? The mount will be stopped for this.', {name}))) api('set_profile', {name});
+};
 // ---- Switch language ----
 $('opt-lang').value = LANG;
 $('opt-lang').onchange = e => setLang(e.target.value);

@@ -102,6 +102,9 @@ class WebGui:
         self.align_targets: list[str] = []
         self.aligned = False
         self.aligned_text: Text = ''
+        self.profiles: list[str] = []
+        self.profile = ''
+        self.profile_request: str | None = None
 
         # Observer's geocentric position and directions (for plane latitude/longitude)
         self.obs_xyz = numpy.array([c.to(units.m).value for c in observatory_location.to_geocentric()])
@@ -220,6 +223,16 @@ class WebGui:
             self.aligned = aligned
             self.aligned_text = aligned_text
 
+    def set_profiles(self, names: list[str], active: str) -> None:
+        with self.lock:
+            self.profiles = list(names)
+            self.profile = active
+
+    def pop_profile_request(self) -> str | None:
+        with self.lock:
+            req, self.profile_request = self.profile_request, None
+            return req
+
     def is_aligned(self) -> bool:
         with self.lock:
             return self.aligned
@@ -286,6 +299,7 @@ class WebGui:
                 'scope_side': self.scope_side,
                 'target_side': self.target_side,
                 'auto_flip': self.auto_flip,
+                'profiles': {'list': self.profiles, 'active': self.profile},
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
                            'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
@@ -374,6 +388,18 @@ class WebGui:
         with self.lock:
             if name in ('track', 'flip_test') and self.manual_available and not self.aligned:
                 return _error(Msg('Align first (card "Control & alignment").'))
+            if name == 'set_profile':
+                prof = data.get('name')
+                if not isinstance(prof, str) or prof not in self.profiles:
+                    return _error(Msg('Unknown profile'))
+                if prof == self.profile:
+                    return _error(Msg('This profile is already active'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.home_requested = False
+                self.jog_rates = (0.0, 0.0)
+                self.profile_request = prof
+                return {'ok': True}
             if name == 'jog':
                 if not self.manual_available:
                     return _error(Msg('Manual control not available'))
