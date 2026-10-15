@@ -26,6 +26,8 @@ from typing import Any, Callable
 
 import axis_limits
 
+from messages import Msg, Text
+
 SIDE_A = 'A'
 SIDE_B = 'B'
 TWO_PI = 2 * math.pi
@@ -73,7 +75,7 @@ class EqPointing:
     '''
     def __init__(self, telescope: Any, ra_cal: float, dec_cal: float,
                  guard: 'axis_limits.AxisLimitGuard | None' = None,
-                 notify: Callable[[str], None] = print,
+                 notify: Callable[[Text], None] = print,
                  auto_flip: bool = True,
                  max_rate_deg_s: float = 5.0,
                  switch_margin_deg: float = 1.0,
@@ -116,7 +118,7 @@ class EqPointing:
         self.last_scope_side = side
         return ra, dec, side
 
-    def check_home(self, home_dec_raw: float) -> str | None:
+    def check_home(self, home_dec_raw: float) -> Msg | None:
         '''
         Plausibility of the alignment: in the home position (tube toward the pole)
         d should be 90 degrees. A large deviation indicates an alignment on side B
@@ -124,9 +126,9 @@ class EqPointing:
         '''
         d = math.degrees(_wrap(home_dec_raw + self.dec_cal, -math.pi))
         if abs(d - 90.0) > 15.0:
-            return (f'Check the alignment: the home position gives a declination of {d:.0f} degrees instead of '
-                    'about 90. Was the alignment object approached on the mirrored side, or does the home '
-                    'position not point at the pole? Please align on the normal side.')
+            return Msg('Check the alignment: the home position gives a declination of {d:.0f} degrees instead of '
+                       'about 90. Was the alignment object approached on the mirrored side, or does the home '
+                       'position not point at the pole? Please align on the normal side.', d=d)
         return None
 
     # ------------------------------------------------------------------
@@ -234,7 +236,7 @@ class EqPointing:
             self.side = self._initial_side(cands, ra_raw_now, future)
             self.side_since = now - self.min_hold_s
             if self.side != self.last_scope_side:
-                self.notify(f'The target is easier to reach on side {self.side}: the mount changes sides.')
+                self.notify(Msg('The target is easier to reach on side {side}: the mount changes sides.', side=self.side))
         current, other = cands[self.side], cands[other_side(self.side)]
         if self.auto_flip and self.guard is not None and not current.feasible:
             # After a switch, stay on the new side for a while to avoid flip-flopping.
@@ -243,8 +245,8 @@ class EqPointing:
             if other_ok and held_long_enough:
                 self.side = other.side
                 self.side_since = now
-                self.notify(f'Meridian flip: changing to side {self.side}. The target is out of view during the '
-                            'rotation.')
+                self.notify(Msg('Meridian flip: changing to side {side}. The target is out of view during the '
+                                'rotation.', side=self.side))
                 return other
         return current
 

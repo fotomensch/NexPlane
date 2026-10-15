@@ -60,6 +60,7 @@ import mount_base
 import skywatcher
 
 from axis_limits import deg, rad
+from messages import Text
 from util import SKYWATCHER_TELESCOPE_PROTOCOLS
 
 SPEEDS_DEG_S = [0.1, 0.25, 0.5, 1.0, 2.0, 3.5, 5.0]
@@ -238,13 +239,13 @@ class Teacher:
         '''First problem of the taught outline and zones, or None if they are valid.'''
         problems = axis_limits.polygon_problems(self.boundary)
         if problems:
-            return problems[0]
+            return str(problems[0])
         home = (self.home[1], self.home[2])
         if not axis_limits.point_in_polygon(home, self.boundary):
             return 'Home lies outside the outline.'
         zones = [z for z in self.exclusions if len(z) >= 3]
         problems = axis_limits.exclusion_problems(self.boundary, zones, home)
-        return problems[0] if problems else None
+        return str(problems[0]) if problems else None
 
     def status_lines(self) -> list[str]:
         '''Status lines for the screen: what is edited, last point, validity, clearance here.'''
@@ -380,7 +381,7 @@ def main() -> None:
             teacher.message = (f'CHECK MODE (profile {guard.profile}): limit guard active. '
                                'Move freely and check the behaviour at the edge.')
 
-            def notify(text: str, t: Teacher = teacher) -> None:
+            def notify(text: Text, t: Teacher = teacher) -> None:
                 t.message = f'CHECK MODE: {text}'
             guard.notify = notify
         elif args.edit:

@@ -27,6 +27,8 @@ from typing import Any, Callable
 import config
 import skywatcher
 
+from messages import Msg, Text, join
+
 DEFAULTS: dict[str, Any] = {
     'file': None,
     'margin_degrees': 3.0,
@@ -65,15 +67,15 @@ def get_settings(config_data: dict[str, Any]) -> dict[str, Any] | None:
     # (long tube / camera only). Without profiles, file is the only profile.
     profiles = settings.get('profiles') or {}
     if not isinstance(profiles, dict):
-        raise LimitError('axis_limits.profiles must map profile names to file names.')
+        raise LimitError(Msg('axis_limits.profiles must map profile names to file names.'))
     if not profiles and settings.get('file'):
         profiles = {'default': settings['file']}
     settings['profiles'] = dict(profiles)
     if profiles:
         active = settings.get('profile') or next(iter(profiles))
         if active not in profiles:
-            names = ', '.join(profiles)
-            raise LimitError(f'axis_limits.profile "{active}" does not exist. Available: {names}')
+            raise LimitError(Msg('axis_limits.profile "{name}" does not exist. Available: {names}',
+                                 name=active, names=', '.join(profiles)))
         settings['profile'] = active
         settings['file'] = profiles[active]
     return settings
@@ -137,18 +139,19 @@ def crossing_edges(poly: list[Point]) -> list[tuple[int, int]]:
                 pairs.append((i, j))
     return pairs
 
-def polygon_problems(poly: list[Point]) -> list[str]:
+def polygon_problems(poly: list[Point]) -> list[Msg]:
     '''Returns a list of problems (empty = OK).'''
     problems = []
     n = len(poly)
     if n < 3:
-        return ['At least three boundary points are needed.']
+        return [Msg('At least three boundary points are needed.')]
     area2 = sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1] for i in range(n))
     if abs(area2) < 1e-9:
-        problems.append('The outline has no area (all points on one line?).')
+        problems.append(Msg('The outline has no area (all points on one line?).'))
     for i, j in crossing_edges(poly):
-        problems.append(f'The boundary crosses itself (edge {i + 1}-{i + 2} with edge {j + 1}-{(j + 1) % n + 1}). '
-                        'Please mark the points in order along the boundary.')
+        problems.append(Msg('The boundary crosses itself (edge {a1}-{a2} with edge {b1}-{b2}). '
+                            'Please mark the points in order along the boundary.',
+                            a1=i + 1, a2=i + 2, b1=j + 1, b2=(j + 1) % n + 1))
     return problems
 
 def clearance(p: Point, poly: list[Point], margin: float,
@@ -167,14 +170,14 @@ def clearance(p: Point, poly: list[Point], margin: float,
             c = ch
     return c
 
-def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], home: Point) -> list[str]:
+def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], home: Point) -> list[Msg]:
     '''Check of the exclusion zones (empty = OK).'''
     problems = []
     for k, zone in enumerate(exclusions, start=1):
         for prob in polygon_problems(zone):
-            problems.append(f'Exclusion zone {k}: {prob}')
+            problems.append(Msg('Exclusion zone {k}: {problem}', k=k, problem=prob))
         if len(zone) >= 3 and point_in_polygon(home, zone):
-            problems.append(f'Exclusion zone {k} contains the home position.')
+            problems.append(Msg('Exclusion zone {k} contains the home position.', k=k))
     return problems
 
 # ---------------------------------------------------------------------------
@@ -190,12 +193,12 @@ def save_limits(path: str,
     exclusions_rad = [z for z in (exclusions_rad or []) if z]
     problems = polygon_problems(boundary_rad)
     if problems:
-        raise LimitError(' '.join(problems))
+        raise LimitError(join(problems))
     if not point_in_polygon((home_rad[1], home_rad[2]), boundary_rad):
-        raise LimitError('The home position lies outside the outline.')
+        raise LimitError(Msg('The home position lies outside the outline.'))
     problems = exclusion_problems(boundary_rad, exclusions_rad, (home_rad[1], home_rad[2]))
     if problems:
-        raise LimitError(' '.join(problems))
+        raise LimitError(join(problems))
     data: dict[str, Any] = {
         'version': 2,
         'created': datetime.datetime.now().isoformat(timespec='seconds'),
@@ -216,13 +219,13 @@ def load_limits(path: str) -> dict[str, Any]:
         with open(path) as f:
             data = yaml.safe_load(f)
     except FileNotFoundError:
-        raise LimitError(f'Limits file not found: {path} (teach it with teach_limits.py first)')
+        raise LimitError(Msg('Limits file not found: {path} (teach it with teach_limits.py first)', path=path))
     if not isinstance(data, dict) or 'polygon_deg' not in data:
-        raise LimitError(f'Limits file {path} has an old or unknown format. '
-                         'Please teach it again with teach_limits.py.')
+        raise LimitError(Msg('Limits file {path} has an old or unknown format. '
+                             'Please teach it again with teach_limits.py.', path=path))
     for key in ['cpr', 'home_deg', 'polygon_deg']:
         if key not in data:
-            raise LimitError(f'Limits file {path} is incomplete: {key} is missing')
+            raise LimitError(Msg('Limits file {path} is incomplete: {key} is missing', path=path, key=key))
     return dict(data)
 
 # ---------------------------------------------------------------------------
@@ -256,7 +259,7 @@ class AxisLimitGuard:
 
         self.lookahead = float(settings['lookahead_seconds'])
         if self.lookahead <= 0:
-            raise LimitError('lookahead_seconds must be > 0.')
+            raise LimitError(Msg('lookahead_seconds must be > 0.'))
         self.trip_dist = rad(float(settings['wrong_way_trip_degrees']))
 
         self.last_pos: dict[int, float | None] = {1: None, 2: None}
@@ -266,7 +269,7 @@ class AxisLimitGuard:
         self.limited = False
         self.tripped = False
         # Messages during operation (e.g. can be redirected to a terminal UI).
-        self.notify: Callable[[str], None] = print
+        self.notify: Callable[[Text], None] = print
         # Measured time between two motion commands per axis (initial value deliberately pessimistic).
         self.cycle: dict[int, float] = {1: 0.5, 2: 0.5}
         self.last_slew_time: dict[int, float | None] = {1: None, 2: None}
@@ -278,9 +281,9 @@ class AxisLimitGuard:
         mount._slew_axis = self._slew_axis  # type: ignore[method-assign]
 
         if int(limits['cpr'][1]) != mount.cpr[1] or int(limits['cpr'][2]) != mount.cpr[2]:
-            raise LimitError('The steps per revolution do not match the limits file (different motor '
-                             'controller, firmware or simulator?). Please teach the limits again, or '
-                             'comment out axis_limits for simulator tests.')
+            raise LimitError(Msg('The steps per revolution do not match the limits file (different motor '
+                                 'controller, firmware or simulator?). Please teach the limits again, or '
+                                 'comment out axis_limits for simulator tests.'))
 
         p1 = self._inquire_position(1)
         p2 = self._inquire_position(2)
@@ -289,10 +292,10 @@ class AxisLimitGuard:
             d1 = abs(p1 - rad(limits['home_deg'][1]))
             d2 = abs(p2 - rad(limits['home_deg'][2]))
             if d1 > tol or d2 > tol:
-                raise LimitError(
-                    f'The mount is not at the taught home position (off by {deg(d1):.2f} degrees on axis 1, '
-                    f'{deg(d2):.2f} degrees on axis 2). Move the mount to the home position, switch it off and on '
-                    'again, then restart.')
+                raise LimitError(Msg(
+                    'The mount is not at the taught home position (off by {d1:.2f} degrees on axis 1, '
+                    '{d2:.2f} degrees on axis 2). Move the mount to the home position, switch it off and on '
+                    'again, then restart.', d1=deg(d1), d2=deg(d2)))
         c = self.clearance_at((p1, p2))
         if c < 0:
             # No abort: only moves back into the permitted area are possible then.
@@ -312,12 +315,13 @@ class AxisLimitGuard:
         poly = [(rad(a), rad(b)) for a, b in limits['polygon_deg']]
         problems = polygon_problems(poly)
         if problems:
-            raise LimitError('The outline in the limits file is invalid: ' + ' '.join(problems))
+            raise LimitError(Msg('The outline in the limits file is invalid: {problems}', problems=join(problems)))
         holes = [[(rad(a), rad(b)) for a, b in zone] for zone in (limits.get('exclusions_deg') or []) if zone]
         home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
         problems = exclusion_problems(poly, holes, home)
         if problems:
-            raise LimitError('The exclusion zones in the limits file are invalid: ' + ' '.join(problems))
+            raise LimitError(Msg('The exclusion zones in the limits file are invalid: {problems}',
+                                 problems=join(problems)))
         self.poly, self.holes, self.home = poly, holes, home
 
     def clearance_at(self, p: Point) -> float:
@@ -383,8 +387,8 @@ class AxisLimitGuard:
                 self.wrong_way[axis] = 0.0
             if self.wrong_way[axis] > self.trip_dist:
                 self._emergency_stop()
-                raise LimitError(f'Axis {axis} moves against the commanded direction. '
-                                 'Emergency stop triggered.')
+                raise LimitError(Msg('Axis {axis} moves against the commanded direction. '
+                                     'Emergency stop triggered.', axis=axis))
         else:
             self.wrong_way[axis] = 0.0
         return p
@@ -435,7 +439,7 @@ class AxisLimitGuard:
 
         is_limited = scale < 1.0
         if is_limited and not self.limited:
-            self.notify('Edge of the safe area reached, motion is limited.')
+            self.notify(Msg('Edge of the safe area reached, motion is limited.'))
         self.limited = is_limited
 
         new = {1: r1 * scale, 2: r2 * scale}
@@ -452,6 +456,7 @@ def install_from_config(telescope: Any, config_data: dict[str, Any], telescope_p
         print('WARNING: No axis limits configured (axis_limits.file in config.yaml).')
         return None
     if not isinstance(telescope, skywatcher.SkyWatcher):
-        raise LimitError(f'Axis limits are only supported for Sky-Watcher protocols, not {telescope_protocol}.')
+        raise LimitError(Msg('Axis limits are only supported for Sky-Watcher protocols, not {protocol}.',
+                             protocol=telescope_protocol))
     limits = load_limits(resolve_path(settings['file']))
     return AxisLimitGuard(telescope, limits, settings)

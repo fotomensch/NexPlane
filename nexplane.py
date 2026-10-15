@@ -25,6 +25,7 @@ import sbs1
 import tracker
 import util
 
+from messages import Msg
 from util import unwrap
 
 # The OpenGL GUI is only needed without --web. If OpenGL/GLUT is missing,
@@ -157,14 +158,14 @@ def main() -> None:
         try:
             telescope = align.setup_telescope_interface(args, serial_iface)
         except nexstar.CommError as e:
-            msg = (f'The mount does not answer ({str(e) or "empty response"}). Please check: is the motor '
-                   'controller switched on and powered? Is the USB cable plugged in? Was telescope_server '
-                   '(re)started AFTER switching on the controller, and on the right port (ls /dev/ttyUSB*)? '
-                   'Is no other software (SynScan app) connected? Then restart NexPlane.')
+            msg = Msg('The mount does not answer ({error}). Please check: is the motor controller switched on '
+                      'and powered? Is the USB cable plugged in? Was telescope_server (re)started AFTER switching '
+                      'on the controller, and on the right port (ls /dev/ttyUSB*)? Is no other software (SynScan '
+                      'app) connected? Then restart NexPlane.', error=str(e) or 'empty response')
             if args.web:
                 gui_iface.notify(msg)
                 time.sleep(1.0)   # Give the browser a moment to fetch the message
-            raise SystemExit('\n' + msg)
+            raise SystemExit('\n' + str(msg))
 
         # Enable axis soft limits if configured in config.yaml.
         limit_guard = axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
@@ -211,14 +212,14 @@ def main() -> None:
         # Meridian flip (EQ mode with Sky-Watcher mount only).
         pointing: eq_flip.EqPointing | None = None
         limits_data: dict[str, Any] | None = None
-        notify: Any = gui_iface.notify if args.web else print
+        notify: Any = gui_iface.notify if args.web else print   # takes a Text (Msg or str)
         if args.mount_mode == 'eq' and isinstance(telescope, skywatcher.SkyWatcher):
             pointing = eq_flip.EqPointing(
                 telescope, ra_cal, dec_cal, limit_guard, notify=notify,
                 auto_flip=bool(config_data.get('meridian_flip', True)),
                 max_rate_deg_s=float(config_data.get('max_slew_degrees_per_second', 5.0)))
             if limit_guard is None:
-                notify('No safe area configured: the automatic meridian flip is off.')
+                notify(Msg('No safe area configured: the automatic meridian flip is off.'))
             else:
                 limits_data = {'home_deg': {1: limit_guard.home[0] * 180 / math.pi,
                                             2: limit_guard.home[1] * 180 / math.pi}}

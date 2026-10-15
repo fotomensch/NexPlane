@@ -512,6 +512,9 @@ The page is served on `http://127.0.0.1:8765/` only (`--web-port` or `web_port` 
 web pages cannot control the mount. `web_gui: true` in `config.yaml` makes `--web` the default;
 `--no-browser` does not open a browser. GLUT is not needed for `--web`.
 
+The page can be switched between English and German (selector in the header; the default
+follows the browser). Translations are in `webgui_static/i18n_de.js`.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

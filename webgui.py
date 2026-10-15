@@ -12,6 +12,9 @@ OpenGL layers (update_planes, get_tracked_plane, stop_tracking,
 get_gains, get_offsets, reset_offsets, update_positions,
 update_telescope_location, update_comm_failure), so that the main loop
 stays unchanged.
+
+Texts for the user are sent as messages.Msg (English template plus parameters); the page
+translates them into the language selected in the browser (see webgui_static/i18n_de.js).
 '''
 
 import collections
@@ -32,6 +35,7 @@ import numpy
 
 import util
 
+from messages import Msg, Text, to_json
 from sbs1 import Airplane
 from util import unwrap
 
@@ -47,9 +51,15 @@ class Exit(Exception):
 def _deg(r: float) -> float:
     return r * 180.0 / math.pi
 
-def _error(msg: str) -> dict[str, Any]:
+def _error(msg: Msg) -> dict[str, Any]:
     '''Reply to a GUI command that was refused.'''
     return {'ok': False, 'error': msg}
+
+def _json_default(obj: Any) -> Any:
+    '''json.dumps() helper: messages are sent as template plus parameters.'''
+    if isinstance(obj, Msg):
+        return obj.to_json()
+    raise TypeError(f'{type(obj).__name__} is not JSON serializable')
 
 class WebGui:
     '''
@@ -68,7 +78,7 @@ class WebGui:
         self.sun_azm_alt: tuple[float, float] | None = None
         self.moon_azm_alt: tuple[float, float] | None = None
         self.comm_failure = False
-        self.messages: collections.deque[tuple[float, str]] = collections.deque(maxlen=20)
+        self.messages: collections.deque[tuple[float, Any]] = collections.deque(maxlen=20)   # (time, to_json(text))
 
         # Set by the GUI
         self.tracked_plane: str | None = None
@@ -166,10 +176,10 @@ class WebGui:
         with self.lock:
             self.comm_failure = warn_comm_failure
 
-    def notify(self, text: str) -> None:
-        '''Show a message (e.g. from the limit monitor) in the GUI and in the terminal.'''
+    def notify(self, text: Text) -> None:
+        '''Show a message (e.g. from the limit monitor) in the GUI and, in English, in the terminal.'''
         with self.lock:
-            self.messages.append((time.time(), text))
+            self.messages.append((time.time(), to_json(text)))
         print(text)
 
     # ------------------------------------------------------------------
@@ -280,7 +290,7 @@ class WebGui:
             if name == 'track':
                 hex_id = data.get('hex')
                 if not isinstance(hex_id, str) or hex_id not in self.planes:
-                    return _error('Unknown target')
+                    return _error(Msg('Unknown target'))
                 self.tracked_plane = hex_id
                 self.azm_offset = 0.0
                 self.alt_offset = 0.0
@@ -290,7 +300,7 @@ class WebGui:
                 daz = float(data.get('daz', 0.0))
                 dele = float(data.get('del', 0.0))
                 if abs(daz) > 5 or abs(dele) > 5:
-                    return _error('Correction too large')
+                    return _error(Msg('Correction too large'))
                 self.azm_offset += daz / 180 * math.pi
                 self.alt_offset += dele / 180 * math.pi
             elif name == 'offset_reset':
@@ -300,13 +310,13 @@ class WebGui:
                 which = data.get('which')
                 delta = float(data.get('delta', 0.0))
                 if which not in ('kp', 'ki', 'kd') or abs(delta) > 0.1:
-                    return _error('Invalid controller value')
+                    return _error(Msg('Invalid controller value'))
                 setattr(self, which, getattr(self, which) + delta)
                 self.gain_changes += 1
             elif name == 'quit':
                 self.quit_requested = True
             else:
-                return _error('Unknown command')
+                return _error(Msg('Unknown command'))
         return {'ok': True}
 
     # ------------------------------------------------------------------
@@ -333,7 +343,7 @@ class WebGui:
                 self.wfile.write(body)
 
             def _json(self, code: int, obj: Any) -> None:
-                self._send(code, json.dumps(obj).encode('utf-8'), 'application/json; charset=utf-8')
+                self._send(code, json.dumps(obj, default=_json_default).encode('utf-8'), 'application/json; charset=utf-8')
 
             def _host_ok(self) -> bool:
                 host = (self.headers.get('Host') or '').split(':')[0]
@@ -387,7 +397,7 @@ class WebGui:
                     if not isinstance(data, dict):
                         raise ValueError
                 except Exception:
-                    self._json(400, _error('Invalid request'))
+                    self._json(400, _error(Msg('Invalid request')))
                     return
                 self._json(200, webgui.command(self.path[len('/api/'):], data))
 
