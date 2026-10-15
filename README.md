@@ -708,6 +708,17 @@ be different if you have changed the configuration from the default.
                             Which protocol to use to talk to the telescope (default:
                             nexstar-hand-control)
 
+### `start_nexplane.py`
+
+`./start_nexplane.py` opens a GNOME Terminal window each for dump1090, `telescope_server.py` and
+`nexplane.py --web` (and, if wanted, `satellites.py`, refreshing TLE files older than two days).
+It waits until dump1090 and the telescope server answer before it starts NexPlane, and does not
+start programs that are already running. When NexPlane ends, the helper windows it opened are
+closed. The programs run with the same Python as the script. The dump1090 executable comes from
+`dump1090: /path/to/dump1090` in `config.yaml` or `--dump1090` (default: `dump1090` on the
+`PATH`); the mount protocol is the usual `telescope_protocol` setting. `--hootl` makes a dry run
+with a simulated mount.
+
 ## Advanced software testing
 
 If you are making changes to NexPlane, or you are having trouble and want a more
