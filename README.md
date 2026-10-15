@@ -632,6 +632,10 @@ points. Points can be undone, saved (the previous file is kept as `.bak`) or dis
 
 While refining, the gamepad stick moves the crosshair on the map: up = north, right = east.
 
+"Rough alignment for tests at home" assumes the mount was switched on at the taught home
+position, roughly facing north, and aligns from that, accurate to a few degrees. It is meant for
+indoor tests, e.g. refining limits, and is never saved.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

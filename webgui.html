@@ -226,6 +226,15 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <div class="hint" style="margin:10px 0 4px">Or on an aircraft: click it in the list or map (aiming target), move the telescope to centre it, then</div>
       <button class="btn" id="btn-align-plane" style="width:100%" title="Same as gamepad ✕ and “Accept (sync point)” in the Correction card">Aircraft is centred – accept as sync point</button>
       <button class="btn" id="btn-forget" style="width:100%;margin-top:6px" title="Discard sync points, model and correction, e.g. after tests in the living room">Forget alignment</button>
+      <details id="testalign-box" style="margin-top:12px">
+        <summary class="hint" style="cursor:pointer">Rough alignment for tests at home (test mode)</summary>
+        <div class="hint" style="margin:6px 0">Only for testing without a view of a landmark or the sky, e.g. to refine the limits in the living room. Requirements: mount roughly facing north, latitude set, taught home position (counterweight down, tube toward the pole). Accuracy only a few degrees. Not saved and does not overwrite any alignment files. Check: from the home position move only the Dec axis; the tube swings from the pole toward west or east. The display must show the same side (west: Az between 180° and 360°, east: Az between 0° and 180°), otherwise press “Turn by 180°”.</div>
+        <button class="btn" id="btn-test-set" style="width:100%">Set test alignment</button>
+        <div class="row" style="margin-top:6px">
+          <button class="btn" id="btn-test-flip" style="flex:1">Turn by 180°</button>
+          <button class="btn" id="btn-test-end" style="flex:1">End test mode</button>
+        </div>
+      </details>
     </div>
     <div class="card" id="target-card">
       <h2>Tracking</h2>
@@ -529,7 +538,10 @@ function updatePanel() {
   $('manual-card').style.display = M.available ? '' : 'none';
   if (M.available) {
     $('btn-align-plane').disabled = !S.tracked || !S.axis_correction;
-    $('align-status').innerHTML = M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>` +
+    $('btn-test-flip').disabled = $('btn-test-end').disabled = !M.test_aligned;
+    $('align-status').innerHTML = M.test_aligned ? `<span class="warn">${esc(msgText(M.aligned_text))}</span> <span class="hint">` +
+        esc(T('– rough only, for home use. A real alignment (landmark, sky object or aircraft + ✕) ends test mode.')) + '</span>'
+      : M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>` +
         (M.rough_aligned ? ` <span class="hint">${esc(T('– track a first aircraft, centre it, ✕'))}</span>` : '')
       : `<span class="warn">${esc(T('Not aligned.'))}</span> <span class="hint">` +
         esc(T('With a landmark: point the telescope at it and align below. Without a landmark: click an aircraft in ' +
@@ -904,7 +916,14 @@ $('btn-forget').onclick = () => {
   const home = confirm(T('Also delete the stored home direction?\n\nRecommended if the mount was not facing north (e.g. tests in the living room). Otherwise NexPlane starts next time with a wrong rough alignment.\n\nOK = delete, Cancel = keep'));
   api('forget_alignment', {home});
 };
-
+$('btn-test-set').onclick = () => {
+  const M = (S && S.manual) || {};
+  if (!confirm(T('Set test alignment from the home position? Only for tests at home, inaccurate (a few degrees).') +
+               (M.aligned && !M.test_aligned ? '\n\n' + T('The current alignment will be discarded.') : ''))) return;
+  api('test_align', {action: 'set', confirm: true});
+};
+$('btn-test-flip').onclick = () => api('test_align', {action: 'flip'});
+$('btn-test-end').onclick = () => api('test_align', {action: 'end'});
 $('btn-model-pop').onclick = () => { if (confirm(T('Delete the last sync point?'))) api('model_pop'); };
 $('model-points').addEventListener('click', e => {
   const b = e.target.closest('[data-delpt]'); if (!b) return;

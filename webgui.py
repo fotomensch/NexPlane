@@ -102,6 +102,7 @@ class WebGui:
         self.align_targets: list[str] = []
         self.aligned = False
         self.aligned_text: Text = ''
+        self.test_aligned = False       # rough test alignment for indoor tests (not saved)
         self.rough_aligned = False      # rough alignment from the saved home direction
         self.location = ''
         self.location_presets: dict[str, tuple[float, float, float]] = {}
@@ -382,17 +383,23 @@ class WebGui:
             req, self.align_request = self.align_request, None
             return req
 
-    def set_aligned(self, text: Text, rough: bool = False) -> None:
+    def set_aligned(self, text: Text, test: bool = False, rough: bool = False) -> None:
         with self.lock:
             self.aligned = True
             self.aligned_text = text
+            self.test_aligned = test
             self.rough_aligned = rough
+
+    def is_test_aligned(self) -> bool:
+        with self.lock:
+            return self.aligned and self.test_aligned
 
     def set_unaligned(self) -> None:
         '''Back to "not aligned": stop tracking and drop the blind-area grid.'''
         with self.lock:
             self.aligned = False
             self.aligned_text = ''
+            self.test_aligned = False
             self.rough_aligned = False
             self.tracked_plane = None
             self.fixed_target = None
@@ -452,6 +459,7 @@ class WebGui:
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
                            'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
+                           'test_aligned': self.aligned and self.test_aligned,
                            'rough_aligned': self.aligned and self.rough_aligned,
                            'jogging': time.monotonic() - self.jog_time <= self.JOG_DEADMAN_S and self.jog_rates != (0.0, 0.0)},
                 'fixed_target': ({'az': _deg(self.fixed_target['az']), 'el': _deg(self.fixed_target['el']),
@@ -698,6 +706,19 @@ class WebGui:
                 self.tracked_plane = None
                 self.fixed_target = None
                 self.corr_queue.append(('forget', 1.0 if data.get('home') else 0.0, 0.0))
+            elif name == 'test_align':
+                if not self.axis_correction or not self.manual_available:
+                    return _error(Msg('Only available in EQ mode with mount control'))
+                action = data.get('action')
+                if action not in ('set', 'flip', 'end'):
+                    return _error(Msg('Unknown command'))
+                if action in ('flip', 'end') and not (self.aligned and self.test_aligned):
+                    return _error(Msg('Test mode is not active'))
+                if action == 'set' and self.aligned and not self.test_aligned and data.get('confirm') is not True:
+                    return _error(Msg('Confirmation missing'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.corr_queue.append(('test_' + action, 0.0, 0.0))
             elif name == 'model_pop':
                 if not self.axis_correction:
                     return _error(Msg('Only available in EQ mode'))

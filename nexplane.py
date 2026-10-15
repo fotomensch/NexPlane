@@ -375,6 +375,29 @@ def main() -> None:
             request_reach()
             return True
 
+        # Rough test alignment for indoor tests (separate from the regular alignment, never saved):
+        # in the home position the counterweight hangs down and the tube points at the pole. The
+        # counterweight shaft is the Dec axis, so it lies in the meridian plane and a Dec motion
+        # swings the tube from the pole toward east or west (along the 6h/18h hour circle). The RA
+        # axis therefore has hour angle +90 or -90 degrees; which one depends on the counting
+        # direction of the Dec axis, the user checks it and flips if needed.
+        test_align = {'h': math.pi / 2}
+
+        def set_test_alignment(h: float) -> bool:
+            '''Test mode: align roughly from the home position, assuming hour angle h for the RA axis.'''
+            if manual is None or not manual.home_is_taught or pointing is None:
+                notify(Msg('The test alignment needs a taught home position (safe area).'))
+                return False
+            test_align['h'] = util.wrap_rad(h, -math.pi)
+            target_tracker.stop()
+            manual.stop()
+            ra_raw_h, dec_raw_h = home_raw_now()
+            pointing.set_calibration(pointing.model.lst() - ra_raw_h - test_align['h'], math.pi / 2 - dec_raw_h)
+            gui_iface.set_aligned(Msg('TEST MODE at home (rough from home, RA axis {h:.0f}°)',
+                                      h=math.degrees(test_align['h'])), test=True)
+            request_reach()
+            return True
+
         # Correction in the camera image, gamepad and log (EQ mount, browser GUI).
         padctl: pad_control.PadControl | None = None
         pad_settings = pad_control.get_settings(config_data)
@@ -789,6 +812,23 @@ def main() -> None:
                             notify(Msg('Correction set to 0.'))
                         elif kind == 'save':
                             save_correction(tracked_plane_hex_id)
+                        elif kind == 'test_set':
+                            if set_test_alignment(math.pi / 2):
+                                notify(Msg('TEST MODE: roughly aligned from the home position, only for tests at home, '
+                                           'not saved. Check: from the home position move only the Dec axis; the tube '
+                                           'swings from the pole toward west or east. The display must show the same side '
+                                           '(west: Az between 180° and 360°, east: Az between 0° and 180°). If it shows '
+                                           'the other side, press “Turn by 180°”.'))
+                        elif kind == 'test_flip':
+                            if set_test_alignment(test_align['h'] + math.pi):
+                                notify(Msg('TEST MODE: turned by 180° (RA axis now {h:.0f}°).', h=math.degrees(test_align['h'])))
+                        elif kind == 'test_end':
+                            target_tracker.stop()
+                            if manual is not None:
+                                manual.stop()
+                            pointing.set_calibration(0.0, 0.0)
+                            gui_iface.set_unaligned()
+                            notify(Msg('TEST MODE ended. Not aligned.'))
                         elif kind == 'forget':
                             target_tracker.stop()
                             if manual is not None:
