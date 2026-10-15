@@ -500,6 +500,18 @@ max_slew_degrees_per_second: 5.0    # speed limit for flips and slews
 If axis limits are set up, the alignment (landmark or `align.py`) may be done on either side;
 the taught home position tells NexPlane which side it was.
 
+### Browser GUI
+
+`./nexplane.py --web` shows NexPlane in a web browser instead of the OpenGL window: a sky view
+and a ground map (OpenStreetMap, needs internet), the list of aircraft, the tracked target with
+links to flight tracking sites, correction and controller gains. Click an aircraft to track it;
+`Esc` stops. The keyboard controls of the OpenGL GUI work in the page as well.
+
+The page is served on `http://127.0.0.1:8765/` only (`--web-port` or `web_port` in
+`config.yaml` to change), and every request needs a token that changes with each start, so other
+web pages cannot control the mount. `web_gui: true` in `config.yaml` makes `--web` the default;
+`--no-browser` does not open a browser. GLUT is not needed for `--web`.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

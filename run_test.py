@@ -50,6 +50,7 @@ def run_mypy() -> None:
         'skywatcher_wifi_hootl.py',
         'teach_limits.py',
         'telescope_server.py',
+        'webgui.py',
     ])
 
 def satellites() -> Any:

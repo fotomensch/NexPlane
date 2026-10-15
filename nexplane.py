@@ -18,7 +18,6 @@ import axis_limits
 import eq_flip
 import astronomical
 import config
-import gui
 import nexstar
 import rpc
 import skywatcher
@@ -27,6 +26,16 @@ import tracker
 import util
 
 from util import unwrap
+
+# The OpenGL GUI is only needed without --web. If OpenGL/GLUT is missing,
+# NexPlane still runs with --web.
+gui: Any
+try:
+    import gui
+    _gui_import_error: Exception | None = None
+except Exception as _e:
+    gui = None
+    _gui_import_error = _e
 
 def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     '''Parse the configuration data and command line arguments consumed by this script.'''
@@ -52,6 +61,19 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     config.add_arg_telescope(parser, config_data, validators)
     config.add_arg_mount_mode(parser, config_data, validators)
     config.add_arg_telescope_protocol(parser, config_data, validators)
+
+    parser.add_argument(
+        '--web', action=argparse.BooleanOptionalAction, default=bool(config_data.get('web_gui', False)),
+        help='Use the browser GUI instead of the OpenGL window '
+             '(default from config.yaml: web_gui, otherwise off).')
+
+    parser.add_argument(
+        '--web-port', type=int, default=int(config_data.get('web_port', 8765)),
+        help='Port of the browser GUI on 127.0.0.1 (default: 8765).')
+
+    parser.add_argument(
+        '--no-browser', action='store_true',
+        help='With --web, do not open a browser automatically.')
 
     parser.add_argument(
         '--sbs1', type=str, action='append', default=[],
@@ -92,28 +114,42 @@ def main() -> None:
     kd = config_data['gains']['kd']
 
     # Build and run the GUI.
-    layers: list[gui.GuiLayer] = []
-    if args.mount_mode == 'eq':
-        layers.append(gui.EqFrameLayer(observatory_location))
-    layers.append(gui.HorizonLayer())
+    gui_iface: Any
+    exit_exceptions: tuple[type[BaseException], ...]
+    if args.web:
+        import webgui
+        exit_exceptions = (webgui.Exit,)
+        gui_iface = webgui.WebGui(observatory_location, kp, ki, kd, port=args.web_port,
+                                  open_browser=not args.no_browser, mount_mode=args.mount_mode)
+        gui_airplanes = gui_gain_reader = gui_offset_reader = gui_iface
+        gui_sun_moon = gui_telescope = gui_comm_warning = gui_iface
+    else:
+        if gui is None:
+            raise SystemExit(f'The OpenGL GUI is not available ({_gui_import_error}). '
+                             'Install GLUT or start with --web.')
+        exit_exceptions = (gui.Exit,)
+        layers: list[Any] = []
+        if args.mount_mode == 'eq':
+            layers.append(gui.EqFrameLayer(observatory_location))
+        layers.append(gui.HorizonLayer())
 
-    gui_airplanes = gui.AirplaneLayer()
-    gui_gain_reader = gui.GainReaderLayer(kp, ki, kd)
-    gui_offset_reader = gui.OffsetReaderLayer()
-    gui_sun_moon = gui.SunMoonLayer()
-    gui_telescope = gui.TelescopeLayer()
-    gui_comm_warning = gui.CommWarningLayer()
+        gui_airplanes = gui.AirplaneLayer()
+        gui_gain_reader = gui.GainReaderLayer(kp, ki, kd)
+        gui_offset_reader = gui.OffsetReaderLayer()
+        gui_sun_moon = gui.SunMoonLayer()
+        gui_telescope = gui.TelescopeLayer()
+        gui_comm_warning = gui.CommWarningLayer()
 
-    layers.extend([
-        gui_airplanes,
-        gui_gain_reader,
-        gui_offset_reader,
-        gui_sun_moon,
-        gui_telescope,
-        gui_comm_warning,
-    ])
+        layers.extend([
+            gui_airplanes,
+            gui_gain_reader,
+            gui_offset_reader,
+            gui_sun_moon,
+            gui_telescope,
+            gui_comm_warning,
+        ])
 
-    gui_iface = gui.Gui(args.bw, args.white_bg, layers)
+        gui_iface = gui.Gui(args.bw, args.white_bg, layers)
 
     telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
@@ -125,10 +161,15 @@ def main() -> None:
                    'controller switched on and powered? Is the USB cable plugged in? Was telescope_server '
                    '(re)started AFTER switching on the controller, and on the right port (ls /dev/ttyUSB*)? '
                    'Is no other software (SynScan app) connected? Then restart NexPlane.')
+            if args.web:
+                gui_iface.notify(msg)
+                time.sleep(1.0)   # Give the browser a moment to fetch the message
             raise SystemExit('\n' + msg)
 
         # Enable axis soft limits if configured in config.yaml.
         limit_guard = axis_limits.install_from_config(telescope, config_data, args.telescope_protocol)
+        if limit_guard is not None and args.web:
+            limit_guard.notify = gui_iface.notify
 
         # Tracking controller, sends commands to the telescope.
         target_tracker = tracker.Tracker(telescope, kp, ki, kd, (args.mount_mode == 'altaz'))
@@ -170,20 +211,21 @@ def main() -> None:
         # Meridian flip (EQ mode with Sky-Watcher mount only).
         pointing: eq_flip.EqPointing | None = None
         limits_data: dict[str, Any] | None = None
+        notify: Any = gui_iface.notify if args.web else print
         if args.mount_mode == 'eq' and isinstance(telescope, skywatcher.SkyWatcher):
             pointing = eq_flip.EqPointing(
-                telescope, ra_cal, dec_cal, limit_guard,
+                telescope, ra_cal, dec_cal, limit_guard, notify=notify,
                 auto_flip=bool(config_data.get('meridian_flip', True)),
                 max_rate_deg_s=float(config_data.get('max_slew_degrees_per_second', 5.0)))
             if limit_guard is None:
-                print('No safe area configured: the automatic meridian flip is off.')
+                notify('No safe area configured: the automatic meridian flip is off.')
             else:
                 limits_data = {'home_deg': {1: limit_guard.home[0] * 180 / math.pi,
                                             2: limit_guard.home[1] * 180 / math.pi}}
                 warning = pointing.check_home(limits_data['home_deg'][2] / 180 * math.pi) \
                     if (args.landmark or args.alignment) else None
                 if warning:
-                    print(warning)
+                    notify(warning)
         last_target_key: str | None = None
 
         # Main loop
@@ -300,7 +342,7 @@ def main() -> None:
                 print(traceback.format_exc())
                 print('Attempting to continue...')
                 warn_comm_failure = True
-    except gui.Exit:
+    except exit_exceptions:
         pass
     finally:
         # Stop the telescope and clean up.
