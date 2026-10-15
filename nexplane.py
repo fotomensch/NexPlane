@@ -17,6 +17,7 @@ from typing import Any
 import align
 import axis_limits
 import eq_flip
+import reach_map
 import astronomical
 import config
 import nexstar
@@ -250,10 +251,23 @@ def main() -> None:
             gui_iface.enable_manual(Msg('taught home position') if home_is_taught else Msg('position at NexPlane start'),
                                     align_targets, bool(args.landmark or args.alignment), aligned_text)
 
-        # Safe-zone profiles (browser).
+        # Safe-zone profiles and grid of reachable sky regions (browser).
+        reach_worker: reach_map.ReachWorker | None = None
         limit_settings = axis_limits.get_settings(config_data)
         if args.web and limit_guard is not None and limit_settings is not None:
             gui_iface.set_profiles(list(limit_settings['profiles']), limit_guard.profile)
+        if args.web and pointing is not None and limit_guard is not None:
+            reach_worker = reach_map.ReachWorker(gui_iface.set_reach)
+
+        def request_reach() -> None:
+            '''Recompute the blind-area grid in the background (after alignment or a model change).'''
+            if reach_worker is not None and pointing is not None:
+                raw_ra, raw_dec = telescope.get_ra_dec()
+                gui_iface.set_reach_calculating()
+                reach_worker.request(pointing, observatory_location, raw_ra, raw_dec)
+
+        if args.landmark or args.alignment:
+            request_reach()
 
         def write_alignment(new_ra_cal: float, new_dec_cal: float) -> None:
             '''Save the calibration in the same format as align.py (loadable with --alignment).'''
@@ -345,6 +359,8 @@ def main() -> None:
                                    name=new_profile, points=len(limit_guard.poly), zones=len(limit_guard.holes)))
                         if warning:
                             notify(warning)
+                        if gui_iface.is_aligned():
+                            request_reach()
                     except axis_limits.LimitError as e:
                         notify(Msg('Changing the profile is not possible: {error}', error=of_exception(e)))
 
@@ -368,6 +384,7 @@ def main() -> None:
                         write_alignment(new_ra_cal, new_dec_cal)
                         align_name = align_request[4:] if align_request.startswith('sky:') else align_request
                         gui_iface.set_aligned(Msg('{name} (side {side})', name=align_name, side=align_side))
+                        request_reach()
                         done = Msg('Aligned on {name}, side {side}. Saved in {file}.',
                                    name=align_name, side=align_side, file=alignment_file)
                         if home_dec_raw is None:

@@ -537,6 +537,12 @@ switched on again; the wrong-direction stop stays active.
 home it must be about 0°/0°; otherwise the mount was switched on elsewhere and the limits are
 shifted.
 
+#### Blind areas
+
+After alignment, the sky view and the ground map tint the directions the mount cannot reach
+within the axis limits on either pier side. On the map this is shown for aircraft at the flight
+altitude selected in the "Safe area" card.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

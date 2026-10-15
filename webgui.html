@@ -12,6 +12,7 @@
   --plane: #6ea8ff; --sat: #9aa4ae; --track: #ff8a3d; --track2: #ffc29a;
   --scope: #ff4d4d; --sun: #ffd400; --moon: #c8c8c8; --eq: #b05cff; --eq2: #4a3260;
   --horizon: #3fae5a; --grid: #26303b; --warn: #ff4d4d; --ok: #3fae5a;
+  --blind: rgba(255, 77, 77, 0.24);
 }
 body.red {
   --bg: #0a0000; --panel: #140000; --panel2: #1e0303; --line: #3a0a0a;
@@ -19,6 +20,7 @@ body.red {
   --plane: #ff6a55; --sat: #a0352c; --track: #ffb0a0; --track2: #ff8a7a;
   --scope: #ffb3a7; --sun: #ffb000; --moon: #a0352c; --eq: #c0392b; --eq2: #3a0a0a;
   --horizon: #c0392b; --grid: #2a0606; --warn: #ffffff; --ok: #ff6a55;
+  --blind: rgba(255, 180, 160, 0.16);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -121,12 +123,23 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <h2>Safe area</h2>
       <div class="kv" style="margin-bottom:8px">
         <span>Profile</span><span id="lim-active">–</span>
+        <span>Blind areas</span><span id="lim-reach">–</span>
         <span>Position relative to home</span><span id="lim-axes">–</span>
       </div>
       <div class="row" id="prof-row" style="margin-bottom:8px">
         <select id="prof-sel" class="btn" style="flex:1;min-width:0"></select>
         <button class="btn" id="btn-prof">Activate</button>
       </div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="opt-blind" checked> Show blind areas</label>
+      <div class="row" style="margin-bottom:6px">
+        <span class="hint">Flight altitude for the map</span>
+        <select id="opt-blind-alt" class="btn">
+          <option value="3000">3,000 m</option><option value="6000">6,000 m</option>
+          <option value="9000">9,000 m</option><option value="11000" selected>11,000 m</option>
+          <option value="13000">13,000 m</option>
+        </select>
+      </div>
+      <div class="hint">Red tint: directions the mount cannot reach on either side of the pole with the active profile. On the map this applies to aircraft at the selected altitude.</div>
     </div>
     <div class="card" id="manual-card" style="display:none">
       <h2>Control &amp; alignment</h2>
@@ -338,6 +351,17 @@ async function api(name, data = {}) {
 const localMsgs = [];
 function addLocalMsg(text) { localMsgs.push({t: Date.now() / 1000, text}); }
 
+let REACH = null, reachVersion = -1, reachFetching = false;
+async function fetchReach(version) {
+  reachFetching = true;
+  try {
+    const r = await fetch('/api/reach', {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
+    if (r.ok) { const j = await r.json(); REACH = j.grid; reachVersion = version; }
+  } catch (e) { /* retry on the next poll */ }
+  reachFetching = false;
+}
+function blindEnabled() { return $('opt-blind').checked && REACH && S && S.profiles && S.profiles.active; }
+
 async function poll() {
   try {
     const r = await fetch('/api/state', {headers: {'X-NexPlane-Token': TOKEN}, cache: 'no-store'});
@@ -345,6 +369,7 @@ async function poll() {
     if (!r.ok) throw new Error(r.status);
     S = await r.json();
     $('h-conn').innerHTML = `<b style="color:var(--ok)">${esc(T('connected'))}</b>`;
+    if (S.reach && S.reach.version !== reachVersion && !reachFetching) fetchReach(S.reach.version);
     updateTrails(); updatePanel(); if (view === 'map') updateMap();
   } catch (e) {
     $('h-conn').innerHTML = `<b style="color:var(--warn)">${esc(T('no connection to NexPlane'))}</b>`;
@@ -391,6 +416,7 @@ function updatePanel() {
     $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
   }
   const P = S.profiles || {list: [], active: ''};
+  const R = S.reach || {};
   $('lim-active').textContent = P.active || T('no safe area configured');
   $('prof-row').style.display = P.list.length > 1 ? '' : 'none';
   const pkey = LANG + '|' + P.active + '|' + P.list.join('|');
@@ -400,6 +426,8 @@ function updatePanel() {
   }
   const signed = v => (v >= 0 ? '+' : '') + fmt(v, 2);
   $('lim-axes').textContent = S.axis_rel ? T('Axis 1 {a1}° · axis 2 {a2}°', {a1: signed(S.axis_rel[0]), a2: signed(S.axis_rel[1])}) : '–';
+  $('lim-reach').textContent = !P.active ? '–' : R.status ? msgText(R.status)
+    : R.available ? T('calculated') : (S.manual && S.manual.aligned ? T('calculating …') : T('after alignment'));
   const M = S.manual || {};
   $('manual-card').style.display = M.available ? '' : 'none';
   if (M.available) {
@@ -481,12 +509,18 @@ function flightNumber(callsign) {
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
 
 $('plist').addEventListener('click', e => { const tr = e.target.closest('tr[data-hex]'); if (tr) api('track', {hex: tr.dataset.hex}); });
-// ---- Profiles ----
+// ---- Profile / blind zones ----
 $('btn-prof').onclick = () => {
   const name = $('prof-sel').value;
   if (!S || !S.profiles || name === S.profiles.active) { addLocalMsg(T('Please choose a different profile.')); return; }
   if (confirm(T('Activate profile "{name}"? The mount will be stopped for this.', {name}))) api('set_profile', {name});
 };
+for (const id of ['opt-blind', 'opt-blind-alt']) {
+  const el = $(id), key = 'nexplane-' + id;
+  try { const v = localStorage.getItem(key); if (v !== null) { if (el.type === 'checkbox') el.checked = v === '1'; else el.value = v; } } catch (e) {}
+  el.addEventListener('change', () => { try { localStorage.setItem(key, el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value); } catch (e) {} });
+}
+
 // ---- Switch language ----
 $('opt-lang').value = LANG;
 $('opt-lang').onchange = e => setLang(e.target.value);
@@ -636,6 +670,34 @@ function text(t, x, y, color, font = '12px system-ui', align = 'left') {
   ctx.fillStyle = color; ctx.fillText(t, x, y);
 }
 
+const blindCanvas = document.createElement('canvas');
+let blindKey = '';
+function renderBlindLayer(w, h, dpr) {
+  const key = [w, h, dpr, $('opt-mirror').checked, document.body.classList.contains('red'), reachVersion, !!blindEnabled()].join('|');
+  if (key === blindKey) return;
+  blindKey = key;
+  blindCanvas.width = Math.round(w * dpr); blindCanvas.height = Math.round(h * dpr);
+  const b = blindCanvas.getContext('2d');
+  b.setTransform(dpr, 0, 0, dpr, 0, 0); b.clearRect(0, 0, w, h);
+  if (!blindEnabled()) return;
+  b.fillStyle = css('--blind');
+  b.beginPath();   // one shared path so that no seams appear between the cells
+  const as = REACH.az_step, es = REACH.el_step;
+  REACH.rows.forEach((row, j) => {
+    const e0 = j * es, e1 = Math.min(90, (j + 1) * es);
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] !== '0') continue;
+      let k = i; while (k + 1 < row.length && row[k + 1] === '0') k++;   // contiguous cells
+      const a0 = i * as, a1 = (k + 1) * as, pts = [];
+      for (let a = a0; a <= a1 + 1e-9; a += Math.min(as, a1 - a0)) pts.push(project(a, e0));
+      for (let a = a1; a >= a0 - 1e-9; a -= Math.min(as, a1 - a0)) pts.push(project(a, e1));
+      if (pts.every(Boolean)) { pts.forEach((p, n) => n ? b.lineTo(p[0], p[1]) : b.moveTo(p[0], p[1])); b.closePath(); }
+      i = k;
+    }
+  });
+  b.fill('nonzero');
+}
+
 function drawSky() {
   const dpr = window.devicePixelRatio || 1;
   const w = sky.clientWidth, h = sky.clientHeight;
@@ -645,6 +707,8 @@ function drawSky() {
   ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, w, h);
   geo = {cx: w / 2, cy: h / 2, R: Math.min(w, h) / 2 - 28};
   const {cx, cy, R} = geo;
+  renderBlindLayer(w, h, dpr);
+  ctx.drawImage(blindCanvas, 0, 0, w, h);
 
   // Grid
   for (const el of [0, 30, 60]) {
@@ -718,7 +782,7 @@ async function initMap() {
   try { await loadLeaflet(); } catch (e) { $('maperr').style.display = 'block'; return false; }
   map = L.map('map', {zoomControl: true, attributionControl: true}).setView([S ? S.observer.lat : 51, S ? S.observer.lon : 10], 9);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
-  mapLayers = {static: L.layerGroup().addTo(map), dynamic: L.layerGroup().addTo(map), planes: L.layerGroup().addTo(map)};
+  mapLayers = {static: L.layerGroup().addTo(map), blind: L.layerGroup().addTo(map), dynamic: L.layerGroup().addTo(map), planes: L.layerGroup().addTo(map)};
   return true;
 }
 function destination(lat, lon, bearingDeg, distM) {
@@ -734,8 +798,45 @@ function planeIcon(p, tracked) {
       fill="${c}" stroke="${css('--bg')}" stroke-width="1"/></svg>`;
   return L.divIcon({className: 'plane-icon', html: svg, iconSize: [26, 26], iconAnchor: [13, 13]});
 }
+let mapBlindKey = '';
+function updateBlindMap() {
+  const alt = Number($('opt-blind-alt').value);
+  const key = [reachVersion, alt, !!blindEnabled(), document.body.classList.contains('red')].join('|');
+  if (key === mapBlindKey) return;
+  mapBlindKey = key;
+  mapLayers.blind.clearLayers();
+  if (!blindEnabled()) return;
+  const o = S.observer, Re = 6371000, dh = alt - (o.alt_m || 0);
+  const as = REACH.az_step, es = REACH.el_step, rows = REACH.rows;
+  const color = getComputedStyle(document.body).getPropertyValue('--blind').trim();
+  const elAt = d => Math.atan2(dh - d * d / (2 * Re), d) / RAD;
+  const shapes = [];   // all areas as one multi-polygon so that no seams appear
+  for (let i = 0; i < rows[0].length; i++) {
+    const a0 = i * as - 0.25, a1 = (i + 1) * as + 0.25;   // slight overlap to avoid seams
+    let start = null;
+    const step = 2000;
+    for (let d = 500; ; d += step) {
+      const el = elAt(d);
+      const inSky = el >= 0 && d <= 450000;
+      const j = Math.min(rows.length - 1, Math.max(0, Math.floor(el / es)));
+      const blind = inSky && rows[j][i] === '0';
+      if (blind && start === null) start = d;
+      if ((!blind || !inSky) && start !== null) {
+        const d0 = start, d1 = d, mid = (a0 + a1) / 2;
+        shapes.push([[destination(o.lat, o.lon, a0, d0), destination(o.lat, o.lon, mid, d0), destination(o.lat, o.lon, a1, d0),
+                      destination(o.lat, o.lon, a1, d1), destination(o.lat, o.lon, mid, d1), destination(o.lat, o.lon, a0, d1)]]);
+        start = null;
+      }
+      if (!inSky) break;
+    }
+  }
+  if (shapes.length) L.polygon(shapes, {stroke: false, fillColor: color, fillOpacity: 1, fillRule: 'nonzero',
+                                        interactive: false}).addTo(mapLayers.blind);
+}
+
 function updateMap() {
   if (!map || !S) return;
+  updateBlindMap();
   const o = S.observer;
   if (!centered) {
     map.setView([o.lat, o.lon], 9); centered = true;

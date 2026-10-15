@@ -107,6 +107,9 @@ class WebGui:
         self.profile_request: str | None = None
         self.limits_off = False
         self.axis_rel: list[float] | None = None   # axis position relative to the taught home (degrees)
+        self.reach: dict[str, Any] | None = None
+        self.reach_status: Text = ''
+        self.reach_version = 0
 
         # Observer's geocentric position and directions (for plane latitude/longitude)
         self.obs_xyz = numpy.array([c.to(units.m).value for c in observatory_location.to_geocentric()])
@@ -247,6 +250,24 @@ class WebGui:
         with self.lock:
             return self.aligned
 
+    def set_reach(self, grid: dict[str, Any] | None, error: Text = '') -> None:
+        '''Grid of reachable sky regions (from reach_map), or an error message if the calculation failed.'''
+        with self.lock:
+            if grid is not None:
+                self.reach = grid
+                self.reach_status = ''
+            else:
+                self.reach_status = error
+                if error:
+                    self.messages.append((time.time(), to_json(error)))
+            self.reach_version += 1
+
+    def set_reach_calculating(self) -> None:
+        '''The grid of reachable sky regions is being recalculated.'''
+        with self.lock:
+            self.reach_status = Msg('calculating …')
+            self.reach_version += 1
+
     def get_jog(self) -> tuple[float, float] | None:
         '''Current manual control rates in rad/s, or None (no button pressed / dead man's switch expired).'''
         self.exit_if_dead()
@@ -312,6 +333,8 @@ class WebGui:
                 'profiles': {'list': self.profiles, 'active': self.profile},
                 'limits_off': self.limits_off and bool(self.profiles),
                 'axis_rel': self.axis_rel,
+                'reach': {'version': self.reach_version, 'available': self.reach is not None,
+                          'status': to_json(self.reach_status)},
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
                            'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
@@ -562,6 +585,14 @@ class WebGui:
                         return
                     with open(full, 'rb') as f:
                         self._send(200, f.read(), ctype)
+                elif self.path == '/api/reach':
+                    if not self._token_ok():
+                        self._send(403, b'forbidden', 'text/plain')
+                        return
+                    with webgui.lock:
+                        grid = webgui.reach
+                        version = webgui.reach_version
+                    self._json(200, {'version': version, 'grid': grid})
                 elif self.path == '/api/state':
                     if not self._token_ok():
                         self._send(403, b'forbidden', 'text/plain')
