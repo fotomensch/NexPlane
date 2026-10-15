@@ -571,6 +571,9 @@ Each sync point records the focal length selected in the Correction card; points
 longer focal length count more in the fit. Settings: `focal_lengths_mm: [150, 300, 600]`,
 `focal_length_mm` (start value), `sensor_width_mm: 23.5`.
 
+"Forget alignment" discards sync points, model and correction (and on request
+`home_direction.yaml`), e.g. after tests indoors.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

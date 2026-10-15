@@ -178,6 +178,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <button class="btn" id="btn-align" style="width:100%;margin-top:6px">Telescope points at it now – align</button>
       <div class="hint" style="margin:10px 0 4px">Or on an aircraft: click it in the list or map (aiming target), move the telescope to centre it, then</div>
       <button class="btn" id="btn-align-plane" style="width:100%" title="Same as “Accept (sync point)” in the Correction card">Aircraft is centred – accept as sync point</button>
+      <button class="btn" id="btn-forget" style="width:100%;margin-top:6px" title="Discard sync points, model and correction, e.g. after tests in the living room">Forget alignment</button>
     </div>
     <div class="card" id="target-card">
       <h2>Tracking</h2>
@@ -690,6 +691,12 @@ $('btn-reset').onclick = () => api('offset_reset');
 const confirmSyncPoint = () => { if (confirm(T('Is the tracked aircraft centred in the image now? Then it is accepted as a sync point.'))) api('corr_save'); };
 $('btn-corr-save').onclick = confirmSyncPoint;
 $('btn-align-plane').onclick = confirmSyncPoint;
+$('btn-forget').onclick = () => {
+  if (!confirm(T('Forget the current alignment? Sync points, polar error model and correction are discarded, tracking stops.'))) return;
+  const home = confirm(T('Also delete the stored home direction?\n\nRecommended if the mount was not facing north (e.g. tests in the living room). Otherwise NexPlane starts next time with a wrong rough alignment.\n\nOK = delete, Cancel = keep'));
+  api('forget_alignment', {home});
+};
+
 $('btn-model-pop').onclick = () => { if (confirm(T('Delete the last sync point?'))) api('model_pop'); };
 $('model-points').addEventListener('click', e => {
   const b = e.target.closest('[data-delpt]'); if (!b) return;

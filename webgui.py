@@ -341,6 +341,18 @@ class WebGui:
             self.aligned_text = text
             self.rough_aligned = rough
 
+    def set_unaligned(self) -> None:
+        '''Back to "not aligned": stop tracking and drop the blind-area grid.'''
+        with self.lock:
+            self.aligned = False
+            self.aligned_text = ''
+            self.rough_aligned = False
+            self.tracked_plane = None
+            self.fixed_target = None
+            self.reach = None
+            self.reach_status = ''
+            self.reach_version += 1
+
     def notify(self, text: Text) -> None:
         '''Show a message (e.g. from the limit monitor) in the GUI and, in English, in the terminal.'''
         with self.lock:
@@ -593,6 +605,12 @@ class WebGui:
                 if not self.axis_correction:
                     return _error(Msg('Only available in EQ mode'))
                 self.corr_queue.append(('save', 0.0, 0.0))
+            elif name == 'forget_alignment':
+                if not self.axis_correction:
+                    return _error(Msg('Only available in EQ mode'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.corr_queue.append(('forget', 1.0 if data.get('home') else 0.0, 0.0))
             elif name == 'model_pop':
                 if not self.axis_correction:
                     return _error(Msg('Only available in EQ mode'))

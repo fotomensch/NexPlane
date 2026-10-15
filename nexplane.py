@@ -595,6 +595,20 @@ def main() -> None:
                             notify(Msg('Correction set to 0.'))
                         elif kind == 'save':
                             save_correction(tracked_plane_hex_id)
+                        elif kind == 'forget':
+                            target_tracker.stop()
+                            if manual is not None:
+                                manual.stop()
+                            pointing.set_calibration(0.0, 0.0)
+                            gui_iface.set_unaligned()
+                            txt = Msg('Alignment forgotten (points, model and correction deleted). Not aligned.')
+                            if a > 0 and os.path.exists(home_ha_file):
+                                try:
+                                    os.remove(home_ha_file)
+                                    txt += Msg('Stored home direction deleted.')
+                                except OSError as e:
+                                    txt += Msg('The home direction could not be deleted: {error}', error=str(e))
+                            notify(txt)
                         elif kind == 'pop':
                             remove_last_point(int(a) if a >= 0 else None)
                 if args.web and pointing is not None:
