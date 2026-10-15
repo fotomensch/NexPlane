@@ -608,6 +608,12 @@ With the browser GUI in equatorial mode, NexPlane writes `logs/tracking_<time>.c
 rows per second while tracking) and `logs/sync_points.csv`, for measuring ADS-B latency and
 pointing errors. `track_log: false` turns this off.
 
+#### Places editor
+
+"Add locations & landmarks" in the Location card picks a point on a map (OpenStreetMap or
+satellite imagery) and saves it as a location or as a landmark for alignment. Entries are stored
+in `places.yaml` next to `config.yaml`, which itself is never changed.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

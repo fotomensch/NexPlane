@@ -106,6 +106,9 @@ class WebGui:
         self.location = ''
         self.location_presets: dict[str, tuple[float, float, float]] = {}
         self.location_request: str | None = None
+        self.location_types: dict[str, str] = {}
+        self.location_own: set[str] = set()
+        self.place_queue: list[dict[str, Any]] = []
         self.profiles: list[str] = []
         self.profile = ''
         self.profile_request: str | None = None
@@ -239,10 +242,22 @@ class WebGui:
             self.aligned = aligned
             self.aligned_text = aligned_text
 
-    def set_locations(self, current: str, presets: dict[str, tuple[float, float, float]]) -> None:
+    def set_locations(self, current: str, presets: dict[str, tuple[float, float, float]],
+                      types: dict[str, str] | None = None, own: set[str] | None = None) -> None:
         with self.lock:
             self.location = current
             self.location_presets = dict(presets)
+            self.location_types = dict(types or {})
+            self.location_own = set(own or set())
+
+    def set_align_targets(self, targets: list[str]) -> None:
+        with self.lock:
+            self.align_targets = list(targets)
+
+    def pop_place_requests(self) -> list[dict[str, Any]]:
+        with self.lock:
+            q, self.place_queue = self.place_queue, []
+            return q
 
     def set_profiles(self, names: list[str], active: str) -> None:
         with self.lock:
@@ -399,7 +414,9 @@ class WebGui:
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
                           'status': to_json(self.reach_status)},
                 'location': {'current': self.location,
-                             'presets': [{'name': n, 'lat': v[0], 'lon': v[1], 'alt': v[2]}
+                             'presets': [{'name': n, 'lat': v[0], 'lon': v[1], 'alt': v[2],
+                                          'type': self.location_types.get(n, 'location'),
+                                          'own': n in self.location_own}
                                          for n, v in self.location_presets.items()]},
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
@@ -515,10 +532,23 @@ class WebGui:
                 self.jog_rates = (0.0, 0.0)
                 self.profile_request = prof
                 return {'ok': True}
+            if name in ('place_save', 'place_delete'):
+                req: dict[str, Any] = {'cmd': name, 'name': str(data.get('name', '')).strip()}
+                if name == 'place_save':
+                    try:
+                        req.update({'type': str(data.get('type', 'location')), 'lat': float(data['lat']),
+                                    'lon': float(data['lon']), 'alt': float(data.get('alt', 0.0)),
+                                    'activate': bool(data.get('activate', False))})
+                    except (KeyError, TypeError, ValueError):
+                        return _error(Msg('Enter latitude, longitude and altitude as numbers'))
+                self.place_queue.append(req)
+                return {'ok': True}
             if name == 'set_location':
                 loc = data.get('name')
                 if not isinstance(loc, str) or loc not in self.location_presets:
                     return _error(Msg('Unknown location'))
+                if self.location_types.get(loc) == 'landmark':
+                    return _error(Msg('This is a landmark, not a location'))
                 if loc == self.location:
                     return _error(Msg('This location is already active'))
                 self.tracked_plane = None

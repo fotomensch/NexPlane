@@ -40,6 +40,16 @@ header h1 { font-size: 16px; margin: 0 6px 0 0; letter-spacing: .5px; }
 .spacer { flex: 1; }
 #banner { display: none; background: var(--warn); color: #000; font-weight: 700; text-align: center; padding: 8px; }
 #banner.show { display: block; }
+#place-wrap { position: relative; height: 240px; margin-top: 8px; }
+#place-wrap #place-map { position: absolute; inset: 0; border-radius: 6px; }
+#place-wrap.full { position: fixed; inset: 0; height: auto; margin: 0; z-index: 3000; background: var(--bg); }
+#place-wrap.full #place-map { border-radius: 0; bottom: 44px; }
+#place-bar { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; padding: 6px 10px; gap: 10px;
+           align-items: center; background: var(--panel, #1b1f27); font-size: 14px; }
+#place-wrap.full #place-bar { display: flex; }
+#place-fs { position: absolute; top: 10px; right: 54px; z-index: 1000; padding: 2px 8px; }
+/* Let the inputs of the places editor shrink to the card width (long option texts would overflow) */
+#place-edit .kv > input, #place-edit .kv > select { min-width: 0; width: 100%; }
 #limbanner { display: none; background: #d01010; color: #fff; font-weight: 700; text-align: center; padding: 8px; }
 #limbanner.show { display: block; }
 main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
@@ -128,6 +138,28 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <select id="loc-sel" class="btn" style="width:100%"></select>
       <button class="btn" id="btn-loc" style="width:100%;margin-top:6px">Change location</button>
       <div class="hint" style="margin-top:6px">The mount is stopped and NexPlane restarts with the new location. Alignment depends on the location and must be redone afterwards.</div>
+      <details id="place-edit" style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">Add locations &amp; landmarks</summary>
+        <div id="place-wrap">
+          <div id="place-map"></div>
+          <button class="btn" id="place-fs" title="Full screen">⛶</button>
+          <div id="place-bar"><span id="place-barpos" style="flex:1">–</span><button class="btn" id="place-fs-done">Accept &amp; back</button></div>
+        </div>
+        <div class="hint" id="place-maphint" style="margin:4px 0 8px">Click into the map or drag the marker. Without internet the map stays empty – then type the coordinates.</div>
+        <div class="kv" style="grid-template-columns:auto 1fr;gap:4px 8px;align-items:center">
+          <span>Name</span><input id="place-name" class="btn" maxlength="40" placeholder="e.g. hill car park">
+          <span>Type</span><select id="place-type" class="btn"><option value="location">Location (where the telescope stands)</option><option value="landmark">Landmark (for alignment)</option></select>
+          <span>Latitude</span><input id="place-lat" class="btn" inputmode="decimal" placeholder="51.12345 (degrees)">
+          <span>Longitude</span><input id="place-lon" class="btn" inputmode="decimal" placeholder="7.12345 (degrees)">
+          <span>Altitude (m)</span><input id="place-alt" class="btn" inputmode="decimal" placeholder="above sea level">
+        </div>
+        <div class="hint" style="margin-top:4px">Height above sea level. For landmarks the height of the sighted point, e.g. the church spire, not of the ground.</div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn" id="place-save">Save</button>
+          <button class="btn" id="place-save-act" title="Save as location and restart NexPlane with it">Save &amp; use as location</button>
+        </div>
+        <div id="place-list" style="margin-top:8px;font-size:12px"></div>
+      </details>
     </div>
     <div class="card" id="limits-card">
       <h2>Safe area</h2>
@@ -443,10 +475,11 @@ function updatePanel() {
   const cur = L.presets.find(p => p.name === L.current);
   $('loc-current').textContent = L.current || '–';
   $('loc-coords').textContent = cur ? `${fmt(cur.lat, 4)}°, ${fmt(cur.lon, 4)}°, ${fmt(cur.alt, 0)} m` : '–';
-  const lkey = LANG + '|' + L.current + '|' + L.presets.map(p => p.name).join('|');
+  const lkey = LANG + '|' + L.current + '|' + L.presets.map(p => p.name + p.type + p.lat + p.lon + p.alt).join('|');
   if ($('loc-sel').dataset.key !== lkey) {
     $('loc-sel').dataset.key = lkey;
-    $('loc-sel').innerHTML = L.presets.map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+    $('loc-sel').innerHTML = L.presets.filter(p => p.type !== 'landmark').map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+    renderPlaceList(L);
   }
   const P = S.profiles || {list: [], active: ''};
   const R = S.reach || {};
@@ -617,6 +650,84 @@ $('btn-loc').onclick = () => {
     api('set_location', {name}).then(j => { if (j && j.ok) addLocalMsg(T('Changing location, the page will reload shortly …')); });
   }
 };
+
+// ---- Create places (locations / landmarks) ----
+let placeMap = null, placeMarker = null, placeLayer = null;
+function placeFields() {
+  const num = id => parseFloat(String($(id).value).replace(',', '.'));
+  return {name: $('place-name').value.trim(), type: $('place-type').value, lat: num('place-lat'), lon: num('place-lon'), alt: num('place-alt')};
+}
+function placeSetPos(lat, lon, alt) {
+  $('place-lat').value = lat.toFixed(6); $('place-lon').value = lon.toFixed(6);
+  $('place-barpos').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  if (alt != null) $('place-alt').value = Math.round(alt);
+  if (placeMap) { placeMarker.setLatLng([lat, lon]); if (!placeMarker._map) placeMarker.addTo(placeMap); }
+}
+async function initPlaceMap() {
+  if (placeMap) { placeMap.invalidateSize(); return; }
+  try { await loadLeaflet(); } catch (e) { $('place-maphint').textContent = T('Map library not available – type the coordinates.'); return; }
+  const c = S ? [S.observer.lat, S.observer.lon] : [51, 10];
+  placeMap = L.map('place-map', {zoomControl: true}).setView(c, 12);
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'});
+  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                          {maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'});
+  const layers = {}; layers[T('Map')] = osm; layers[T('Satellite')] = sat;
+  const pref = storeGet('nexplane-place-layer') === 'sat' ? sat : osm;
+  pref.addTo(placeMap);
+  L.control.layers(layers, null, {position: 'topright'}).addTo(placeMap);
+  placeMap.on('baselayerchange', e => storeSet('nexplane-place-layer', e.layer === sat ? 'sat' : 'osm'));
+  placeLayer = L.layerGroup().addTo(placeMap);
+  placeMarker = L.marker(c, {draggable: true});
+  placeMarker.on('dragend', () => { const p = placeMarker.getLatLng(); placeSetPos(p.lat, p.lng, null); });
+  placeMap.on('click', e => { placeSetPos(e.latlng.lat, e.latlng.lng, null); });
+  renderPlaceList(S && S.location);
+}
+function renderPlaceList(Lc) {
+  if (!Lc) return;
+  const rows = Lc.presets.map(p => `<tr><td>${p.type === 'landmark' ? '◎' : '⌂'}</td><td>${esc(p.name)}${p.name === Lc.current ? ` <b>${esc(T('(active)'))}</b>` : ''}</td>` +
+    `<td>${fmt(p.lat, 4)}, ${fmt(p.lon, 4)}, ${fmt(p.alt, 0)} m</td><td style="text-align:right;white-space:nowrap">` +
+    (p.own ? `<button class="btn" data-placeedit="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Edit'))}">✎</button> ` +
+             (p.name !== Lc.current ? `<button class="btn" data-placedel="${esc(p.name)}" style="padding:0 6px" title="${esc(T('Delete'))}">✕</button>` : '')
+           : `<span class="hint" title="${esc(T('Defined in config.yaml'))}">config</span>`) + '</td></tr>').join('');
+  $('place-list').innerHTML = '<table style="width:100%"><tbody>' + rows + `</tbody></table><div class="hint">${esc(T('⌂ location · ◎ landmark'))}</div>`;
+  if (placeLayer) {
+    placeLayer.clearLayers();
+    Lc.presets.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 5, color: p.type === 'landmark' ? '#e0a020' : '#3a8ee6'})
+      .bindTooltip(p.name).addTo(placeLayer));
+  }
+}
+$('place-edit').addEventListener('toggle', () => { if ($('place-edit').open) initPlaceMap(); });
+function placeFull(on) {
+  $('place-wrap').classList.toggle('full', on);
+  $('place-fs').textContent = on ? '✕' : '⛶';
+  $('place-fs').title = on ? T('Exit full screen') : T('Full screen');
+  if (placeMap) setTimeout(() => placeMap.invalidateSize(), 50);
+}
+$('place-fs').onclick = () => placeFull(!$('place-wrap').classList.contains('full'));
+$('place-fs-done').onclick = () => placeFull(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('place-wrap').classList.contains('full')) { placeFull(false); e.stopPropagation(); } }, true);
+function placeSave(activate) {
+  const f = placeFields();
+  if (!f.name) { addLocalMsg(T('Please enter a name.')); return; }
+  if ([f.lat, f.lon].some(isNaN)) { addLocalMsg(T('Please enter latitude and longitude (click the map or type).')); return; }
+  if (isNaN(f.alt)) { addLocalMsg(T('Please enter the altitude in metres.')); return; }
+  if (activate) {
+    if (f.type !== 'location') { addLocalMsg(T('Only a location can be activated.')); return; }
+    if (!confirm(T('Save “{name}” and use it as location? NexPlane restarts for this; align again afterwards.', {name: f.name}))) return;
+  }
+  api('place_save', {...f, activate});
+}
+$('place-save').onclick = () => placeSave(false);
+$('place-save-act').onclick = () => placeSave(true);
+$('place-list').addEventListener('click', e => {
+  const d = e.target.closest('[data-placedel]'), ed = e.target.closest('[data-placeedit]');
+  if (d && confirm(T('Delete “{name}”?', {name: d.dataset.placedel}))) api('place_delete', {name: d.dataset.placedel});
+  if (ed && S) {
+    const p = S.location.presets.find(q => q.name === ed.dataset.placeedit); if (!p) return;
+    $('place-name').value = p.name; $('place-type').value = p.type; placeSetPos(p.lat, p.lon, p.alt);
+    if (placeMap) placeMap.setView([p.lat, p.lon], 15);
+  }
+});
 
 // ---- Switch language ----
 $('opt-lang').value = LANG;

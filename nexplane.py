@@ -19,6 +19,7 @@ import axis_limits
 import eq_flip
 import gamepad
 import pad_control
+import places
 import reach_map
 import astronomical
 import config
@@ -157,9 +158,16 @@ def main() -> None:
         exit_exceptions = (webgui.Exit,)
         gui_iface = webgui.WebGui(observatory_location, kp, ki, kd, port=args.web_port,
                                   open_browser=not args.no_browser, mount_mode=args.mount_mode)
-        gui_iface.set_locations(args.location, {
-            name: (float(loc['lat_degrees']), float(loc['lon_degrees']), float(loc['alt_meters']))
-            for name, loc in config_data['locations'].items()})
+        own_places = set(places.load())
+
+        def publish_locations() -> None:
+            '''Send all locations and landmarks (config.yaml and places.yaml) to the browser.'''
+            locs = config_data['locations']
+            gui_iface.set_locations(args.location, {
+                name: (float(loc['lat_degrees']), float(loc['lon_degrees']), float(loc['alt_meters']))
+                for name, loc in locs.items()},
+                {name: str(loc.get('type', 'location')) for name, loc in locs.items()}, own_places)
+        publish_locations()
         gui_airplanes = gui_gain_reader = gui_offset_reader = gui_iface
         gui_sun_moon = gui_telescope = gui_comm_warning = gui_iface
     else:
@@ -656,6 +664,36 @@ def main() -> None:
                                if want_off else Msg('Safe area active again.'))
                         if warning:
                             notify(warning)
+
+                for preq in (gui_iface.pop_place_requests() if args.web else []):
+                    if preq['cmd'] == 'place_save':
+                        base = {k: v for k, v in config_data['locations'].items() if k not in own_places}
+                        err: Msg | None = places.save(preq['name'], preq['type'], preq['lat'], preq['lon'], preq['alt'], base)
+                    else:
+                        err = places.delete(preq['name'])
+                        if err is None and preq['name'] == args.location:
+                            err = Msg('The active location cannot be deleted.')
+                    if err:
+                        notify(Msg('Place not saved: {error}', error=err) if preq['cmd'] == 'place_save'
+                               else Msg('Not deleted: {error}', error=err))
+                        continue
+                    base = {k: v for k, v in config_data['locations'].items() if k not in own_places}
+                    own = places.load()
+                    own_places.clear()
+                    own_places.update(own)
+                    config_data['locations'] = {**base, **own}
+                    publish_locations()
+                    if manual is not None:
+                        gui_iface.set_align_targets([n for n in config_data['locations'] if n != args.location])
+                    if preq['cmd'] == 'place_save':
+                        saved = (Msg('Landmark “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **preq)
+                                 if preq['type'] == 'landmark' else
+                                 Msg('Location “{name}” saved ({lat:.5f}, {lon:.5f}, {alt:.0f} m).', **preq))
+                        notify(saved)
+                        if preq.get('activate') and preq['type'] == 'location' and preq['name'] != args.location:
+                            gui_iface.command('set_location', {'name': preq['name']})
+                    else:
+                        notify(Msg('“{name}” deleted.', name=preq['name']))
 
                 # Axis position relative to the taught home position (shown in the browser)
                 if args.web and limit_guard is not None:
