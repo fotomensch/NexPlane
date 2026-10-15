@@ -1,10 +1,17 @@
-> **This is a fork of [nforrester/NexPlane](https://github.com/nforrester/NexPlane)** with
-> limits, meridian flips, a browser GUI, a pointing model built from aircraft sync points, PS4
-> controller support and more. The work lives on the branch `eq5-extensions`; `master` mirrors
-> upstream. All features are described in **[FEATURES.md](FEATURES.md)** and are being proposed
-> upstream as separate pull requests.
+# NexPlane Extended
 
-## What this fork adds
+**NexPlane Extended** builds on [nforrester/NexPlane](https://github.com/nforrester/NexPlane) and
+adds taught axis limits, meridian flips, a browser GUI, a pointing model built from aircraft sync
+points, gamepad control and more. It was developed and tested on a Sky-Watcher EQ5 in equatorial
+mode. The axis limits need a Sky-Watcher mount, and the meridian flip and the pointing model are
+for equatorial mounts; the browser GUI, the gamepad and the tools are not tied to a mount type.
+
+The work lives on the branch `extended` (the default branch); `master` mirrors upstream. All
+features are described in **[FEATURES.md](FEATURES.md)**. Features 1–27 have been proposed
+upstream as separate pull requests (nforrester/NexPlane #10–#40); newer ones are in this fork
+only for now.
+
+## What NexPlane Extended adds
 
 ![Browser GUI with blind areas and a tracked aircraft](doc/webgui-sky.png)
 
@@ -26,7 +33,7 @@
 ### Quick start (simulator)
 
 ```bash
-git clone -b eq5-extensions https://github.com/fotomensch/NexPlane.git
+git clone -b extended https://github.com/fotomensch/NexPlane.git
 cd NexPlane
 pip install -r requirements.txt
 ./nexplane.py --hootl --web --mount-mode eq --telescope-protocol skywatcher-mount-head-usb

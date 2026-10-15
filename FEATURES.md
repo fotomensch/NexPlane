@@ -1,16 +1,16 @@
-# NexPlane EQ5 extensions – feature guide
+# NexPlane Extended – feature guide
 
-This fork adds 27 features to [NexPlane](https://github.com/nforrester/NexPlane) that grew out of
-tracking aircraft with a **Sky-Watcher EQ5 in equatorial mode**, operated from a browser and a
-PS4 controller. This document explains what each feature does, how it works, how to try it and
-how well it has been tested.
+NexPlane Extended adds the features below to [NexPlane](https://github.com/nforrester/NexPlane).
+They grew out of tracking aircraft with a Sky-Watcher EQ5 in equatorial mode, operated from a
+browser and a PS4 controller, which is also where they were tested. This document explains what
+each feature does, how it works, how to try it and how well it has been tested.
 
 - **Base:** upstream `master`, commit `f0fe174` ("Fix bug in arg validation").
 - **Without new config keys NexPlane behaves as upstream**, except that `--web` and the gamepad
   become available.
 - Most of the code was written with Claude (an AI assistant) and reviewed and field-tested by the
   fork owner.
-- The features are being proposed upstream as separate pull requests; see
+- Features 1–27 have been proposed upstream as separate pull requests; see
   [Status of the upstream pull requests](#status-of-the-upstream-pull-requests).
 
 ![Browser GUI, sky view](doc/webgui-sky.png)
@@ -536,6 +536,44 @@ of the browser GUI against the HOOTL simulator. They are not part of the upstrea
 
 ## Status of the upstream pull requests
 
-The features are being split into small pull requests against `nforrester/NexPlane`, with
-dependent features stacked on top of each other. Each one is checked with `run_test.py` (mypy)
-before it is submitted. The list of branches and pull requests will be added here.
+Features 1–27 were split into small pull requests against `nforrester/NexPlane`, with dependent
+features stacked on top of each other: #10–#38 form one chain (each PR depends on the one before;
+its own change is the last commit of the branch), #39 is based on `master` and #40 on #16. Each
+branch was checked with `run_test.py 0` (mypy) before it was submitted.
+
+| PR | Branch | Title |
+| --- | --- | --- |
+| [#10](https://github.com/nforrester/NexPlane/pull/10) | `pr/00-startup-error` | Clear message when the mount does not answer at start |
+| [#11](https://github.com/nforrester/NexPlane/pull/11) | `pr/01-axis-limits` | Axis soft limits for Sky-Watcher mounts (taught polygon) |
+| [#12](https://github.com/nforrester/NexPlane/pull/12) | `pr/02-limits-exclusion-zones` | Axis limits: exclusion zones |
+| [#13](https://github.com/nforrester/NexPlane/pull/13) | `pr/03-limits-profiles` | Axis limits: profiles for different setups |
+| [#14](https://github.com/nforrester/NexPlane/pull/14) | `pr/04-meridian-flip` | Equatorial mode: both pier sides and automatic meridian flip |
+| [#15](https://github.com/nforrester/NexPlane/pull/15) | `pr/05-fewer-position-queries` | EQ tracking: read the mount position once per cycle |
+| [#16](https://github.com/nforrester/NexPlane/pull/16) | `pr/06-web-gui` | Browser GUI (--web) |
+| [#17](https://github.com/nforrester/NexPlane/pull/17) | `pr/07-web-gui-languages` | Browser GUI: English/German, messages as templates |
+| [#18](https://github.com/nforrester/NexPlane/pull/18) | `pr/08-web-gui-meridian-flip` | Browser GUI: pier side display and side-change test |
+| [#19](https://github.com/nforrester/NexPlane/pull/19) | `pr/09-web-gui-manual-control` | Browser GUI: manual control, go-home and alignment |
+| [#20](https://github.com/nforrester/NexPlane/pull/20) | `pr/10-web-gui-limit-profiles` | Browser GUI: safe area card with profile switch |
+| [#21](https://github.com/nforrester/NexPlane/pull/21) | `pr/11-limits-off-switch` | Browser GUI: switch the axis limits off at your own risk |
+| [#22](https://github.com/nforrester/NexPlane/pull/22) | `pr/12-axis-position-display` | Browser GUI: axis position relative to home |
+| [#23](https://github.com/nforrester/NexPlane/pull/23) | `pr/13-blind-area-map` | Browser GUI: map of directions the mount cannot reach |
+| [#24](https://github.com/nforrester/NexPlane/pull/24) | `pr/14-location-presets` | Browser GUI: switch between configured locations |
+| [#25](https://github.com/nforrester/NexPlane/pull/25) | `pr/15-axis-frame-correction` | EQ mode: correction in the camera image |
+| [#26](https://github.com/nforrester/NexPlane/pull/26) | `pr/16-pointing-model` | EQ mode: sync points and a pointing model |
+| [#27](https://github.com/nforrester/NexPlane/pull/27) | `pr/17-align-without-landmark` | EQ mode: alignment without a landmark |
+| [#28](https://github.com/nforrester/NexPlane/pull/28) | `pr/18-focal-length-weighting` | Pointing model: weight sync points by focal length |
+| [#29](https://github.com/nforrester/NexPlane/pull/29) | `pr/19-forget-alignment` | Browser GUI: forget alignment |
+| [#30](https://github.com/nforrester/NexPlane/pull/30) | `pr/20-refuse-pole-targets` | Refuse alignment targets near the celestial pole |
+| [#31](https://github.com/nforrester/NexPlane/pull/31) | `pr/21-gamepad` | Gamepad (PS4 controller) control |
+| [#32](https://github.com/nforrester/NexPlane/pull/32) | `pr/22-tracking-logs` | CSV logs of tracking and sync points |
+| [#33](https://github.com/nforrester/NexPlane/pull/33) | `pr/23-places-editor` | Browser GUI: places editor with map picker |
+| [#34](https://github.com/nforrester/NexPlane/pull/34) | `pr/24-gps` | GPS position from a WWAN modem |
+| [#35](https://github.com/nforrester/NexPlane/pull/35) | `pr/25-ground-elevation` | Places editor: ground elevation lookup |
+| [#36](https://github.com/nforrester/NexPlane/pull/36) | `pr/26-refine-limits` | Refine the axis limits from the browser |
+| [#37](https://github.com/nforrester/NexPlane/pull/37) | `pr/27-gamepad-map-crosshair` | Refine limits: gamepad moves the map crosshair |
+| [#38](https://github.com/nforrester/NexPlane/pull/38) | `pr/28-test-alignment-mode` | Rough test alignment at home |
+| [#39](https://github.com/nforrester/NexPlane/pull/39) | `pr/mount-port-detection` | Skip cellular modems when picking the serial port |
+| [#40](https://github.com/nforrester/NexPlane/pull/40) | `pr/start-script` | start_nexplane.py: start dump1090, telescope_server and NexPlane |
+
+Features added after that (see the overview) live in this fork only for now. They are built the
+same way, as one branch per feature stacked on the chain, so they can be proposed later.
