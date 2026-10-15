@@ -56,6 +56,50 @@ def calibrate(ra_true: float, dec_true: float, ra_raw: float, dec_raw: float,
         return _wrap(ra_true - math.pi - ra_raw), _wrap(math.pi - dec_true - dec_raw), SIDE_B
     return _wrap(ra_true - ra_raw), _wrap(dec_true - dec_raw), SIDE_A
 
+class ManualControl:
+    '''
+    Manual control of both axes and move to the home position (for the
+    browser UI). All commands go through _slew_axis and thus, if
+    configured, through the safe area monitoring.
+    '''
+    def __init__(self, telescope: Any, home: tuple[float, float], home_is_taught: bool,
+                 max_rate_deg_s: float = 5.0):
+        self.telescope = telescope
+        self.home = home
+        self.home_is_taught = home_is_taught
+        self.max_rate = math.radians(max_rate_deg_s)
+        self.moving = False
+
+    def jog(self, rate1: float, rate2: float) -> None:
+        self.telescope._slew_axis(1, rate1)
+        self.telescope._slew_axis(2, rate2)
+        self.moving = rate1 != 0 or rate2 != 0
+
+    def stop(self) -> None:
+        self.telescope._slew_axis(1, 0.0)
+        self.telescope._slew_axis(2, 0.0)
+        self.moving = False
+
+    def home_step(self) -> bool:
+        '''One control step toward home. Returns True when home is reached.'''
+        e1 = self.home[0] - self.telescope._inquire_position(1)
+        e2 = self.home[1] - self.telescope._inquire_position(2)
+        if abs(e1) < math.radians(0.02) and abs(e2) < math.radians(0.02):
+            self.stop()
+            return True
+        # Brake proportionally, limit total speed, small residual speed
+        r1, r2 = 1.0 * e1, 1.0 * e2
+        speed = math.hypot(r1, r2)
+        if speed > self.max_rate:
+            r1, r2 = r1 * self.max_rate / speed, r2 * self.max_rate / speed
+        min_rate = math.radians(0.05)
+        if 0 < abs(r1) < min_rate and abs(e1) >= math.radians(0.02):
+            r1 = math.copysign(min_rate, r1)
+        if 0 < abs(r2) < min_rate and abs(e2) >= math.radians(0.02):
+            r2 = math.copysign(min_rate, r2)
+        self.jog(r1, r2)
+        return False
+
 class Candidate:
     '''One way to point at a target: pier side, unwrapped raw axis targets and the clearance there.'''
     def __init__(self, side: str, ra_raw: float, dec_raw: float, clearance: float | None):

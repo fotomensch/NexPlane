@@ -63,6 +63,9 @@ aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y
 .warn { color: var(--warn); font-weight: 600; }
 .pad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 34px); gap: 4px; justify-content: center; }
 .pad .btn { padding: 0; touch-action: none; user-select: none; }
+.pad .btn.active { background: var(--accent); color: var(--bg); }
+#jogspeed .btn { padding: 3px 0; font-size: 12px; }
+#jogspeed .btn.sel { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 select.btn, input.btn { cursor: auto; }
 .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -111,6 +114,31 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
     <div id="maperr">Map not available (map library could not be loaded).<br>The sky view still works.</div>
   </div>
   <aside>
+    <div class="card" id="manual-card" style="display:none">
+      <h2>Control &amp; alignment</h2>
+      <div id="align-status" style="margin-bottom:8px"></div>
+      <button class="btn danger" id="btn-allstop" style="width:100%;font-weight:700;margin-bottom:10px">STOP (Esc)</button>
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div class="pad" id="jogpad">
+          <span></span><button class="btn" data-jog="0,1" title="Dec +">▲</button><span></span>
+          <button class="btn" data-jog="-1,0" title="RA −">◀</button><span class="hint" style="align-self:center;text-align:center">hold</span><button class="btn" data-jog="1,0" title="RA +">▶</button>
+          <span></span><button class="btn" data-jog="0,-1" title="Dec −">▼</button><span></span>
+        </div>
+        <div style="font-size:13px">
+          <div class="hint" style="margin-bottom:4px">Speed (°/s)</div>
+          <div id="jogspeed" style="display:grid;grid-template-columns:repeat(3,44px);gap:4px"></div>
+        </div>
+      </div>
+      <div class="hint" style="margin:6px 0 10px">◀ ▶ RA axis, ▲ ▼ Dec axis. Arrow keys work too (hold them).</div>
+      <button class="btn" id="btn-home" style="width:100%">Go to home position</button>
+      <div class="hint" id="home-hint" style="margin:4px 0 10px"></div>
+      <div class="hint" style="margin-bottom:4px">Align: point the telescope exactly at the object, then</div>
+      <div class="row">
+        <select id="align-sel" class="btn" style="flex:1;min-width:0"></select>
+        <input id="align-sky" class="btn" placeholder="e.g. vega, jupiter" style="flex:1;min-width:0;display:none">
+      </div>
+      <button class="btn" id="btn-align" style="width:100%;margin-top:6px">Telescope points at it now – align</button>
+    </div>
     <div class="card" id="target-card">
       <h2>Tracking</h2>
       <div id="target-none" class="hint">No target. Click an aircraft on the map, in the sky view or in the list.</div>
@@ -343,6 +371,25 @@ function updatePanel() {
     $('f-side').textContent = fx.side ? T('Side {side}', {side: fx.side}) : T('being determined …');
     $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
   }
+  const M = S.manual || {};
+  $('manual-card').style.display = M.available ? '' : 'none';
+  if (M.available) {
+    $('align-status').innerHTML = M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>`
+      : `<span class="warn">${esc(T('Not aligned.'))}</span> <span class="hint">` +
+        esc(T('Point the telescope at a landmark or a sky object and align below.')) + '</span>';
+    $('btn-home').textContent = M.home_active ? T('Moving to home position … (Esc stops)') : T('Go to home position');
+    $('home-hint').textContent = T('Target: {where}', {where: M.home_source});
+    const sel = $('align-sel');
+    const key = LANG + '|' + M.align_targets.join('|');
+    if (sel.dataset.key !== key) {
+      const was = sel.value;
+      sel.dataset.key = key;
+      sel.innerHTML = `<option value="__sky__">${esc(T('Sky object …'))}</option>` +
+        M.align_targets.map(n => `<option value="${esc(n)}">${esc(T('Landmark: {name}', {name: n}))}</option>`).join('');
+      if (was && [...sel.options].some(o => o.value === was)) sel.value = was;
+      $('align-sky').style.display = sel.value === '__sky__' ? '' : 'none';
+    }
+  }
   const eq = S.mount_mode === 'eq' && S.scope_side;
   $('flip-card').style.display = eq ? '' : 'none';
   $('h-side').innerHTML = eq ? esc(T('Side')) + ` <b>${esc(S.scope_side)}</b>` : '';
@@ -426,6 +473,47 @@ document.querySelectorAll('aside .card').forEach(card => {
   });
 });
 
+// ---- Manual control ----
+const JOG_SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5];
+let jogSpeed = 0.5, jogDir = [0, 0], jogTimer = null;
+$('jogspeed').innerHTML = JOG_SPEEDS.map(v => `<button class="btn ${v === jogSpeed ? 'sel' : ''}" data-v="${v}">${v}</button>`).join('');
+$('jogspeed').addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  jogSpeed = Number(b.dataset.v);
+  $('jogspeed').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
+});
+function sendJog() { if (jogDir[0] || jogDir[1]) api('jog', {r1: jogDir[0] * jogSpeed, r2: jogDir[1] * jogSpeed}); }
+function setJog(d) {
+  jogDir = d;
+  if (d[0] || d[1]) { sendJog(); if (!jogTimer) jogTimer = setInterval(sendJog, 150); }
+  else { if (jogTimer) { clearInterval(jogTimer); jogTimer = null; } api('jog_stop'); }
+}
+document.querySelectorAll('[data-jog]').forEach(b => {
+  const d = b.dataset.jog.split(',').map(Number);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('active'); setJog(d); });
+  const up = () => { if (b.classList.contains('active')) { b.classList.remove('active'); setJog([0, 0]); } };
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+});
+const arrows = new Set();
+function arrowsToDir() {
+  return [(arrows.has('ArrowRight') ? 1 : 0) - (arrows.has('ArrowLeft') ? 1 : 0), (arrows.has('ArrowUp') ? 1 : 0) - (arrows.has('ArrowDown') ? 1 : 0)];
+}
+window.addEventListener('blur', () => { if (arrows.size) { arrows.clear(); setJog([0, 0]); } });
+document.addEventListener('keyup', e => {
+  if (!e.key.startsWith('Arrow') || !arrows.has(e.key)) return;
+  arrows.delete(e.key); setJog(arrowsToDir()); e.preventDefault();
+});
+$('btn-allstop').onclick = () => { setJog([0, 0]); api('stop'); };
+$('btn-home').onclick = () => { if (confirm(T('Go to home position?'))) api('home'); };
+$('align-sel').onchange = () => { $('align-sky').style.display = $('align-sel').value === '__sky__' ? '' : 'none'; };
+$('btn-align').onclick = () => {
+  const v = $('align-sel').value;
+  const target = v === '__sky__' ? ($('align-sky').value.trim() ? 'sky:' + $('align-sky').value.trim().toLowerCase() : '') : v;
+  if (!target) { addLocalMsg(T('Please enter an object name.')); return; }
+  const name = target.startsWith('sky:') ? target.slice(4) : target;
+  if (confirm(T('Is the telescope now pointing exactly at {name}? Then it will be aligned on it.', {name}))) api('align', {target});
+};
+
 $('btn-stop').onclick = () => api('stop');
 $('btn-stop2').onclick = () => api('stop');
 $('btn-flip').onclick = () => { if (confirm(T('Test a side change? The mount will rotate the RA axis by about 180°.'))) api('flip_test'); };
@@ -443,6 +531,13 @@ $('opt-red').onchange = e => { document.body.classList.toggle('red', e.target.ch
 document.addEventListener('keydown', e => {
   if ((e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') || e.target.tagName === 'SELECT') return;
   const k = e.key;
+  if (k.startsWith('Arrow')) {
+    e.preventDefault();
+    if (!S || !S.manual || !S.manual.available) return;
+    if (!arrows.has(k)) { arrows.add(k); setJog(arrowsToDir()); }
+    return;
+  }
+  if (k === 'Escape') { setJog([0, 0]); }
   const small = 0.1, big = 0.5;
   const moves = {w: [0, small], a: [-small, 0], s: [0, -small], d: [small, 0], k: [0, small], h: [-small, 0], j: [0, -small], l: [small, 0],
                  W: [0, big], A: [-big, 0], S: [0, -big], D: [big, 0], K: [0, big], H: [-big, 0], J: [0, -big], L: [big, 0]};

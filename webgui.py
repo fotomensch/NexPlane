@@ -92,6 +92,17 @@ class WebGui:
         self.gain_changes = 0
         self.quit_requested = False
 
+        # Manual control, homing and alignment (only if nexplane.py offers them)
+        self.manual_available = False
+        self.jog_rates = (0.0, 0.0)          # deg/s per axis
+        self.jog_time = 0.0                  # last jog command (dead man's switch)
+        self.home_requested = False
+        self.home_source: Text = ''
+        self.align_request: str | None = None
+        self.align_targets: list[str] = []
+        self.aligned = False
+        self.aligned_text: Text = ''
+
         # Observer's geocentric position and directions (for plane latitude/longitude)
         self.obs_xyz = numpy.array([c.to(units.m).value for c in observatory_location.to_geocentric()])
         self.n_unit, self.e_unit, self.d_unit = util.ned_unit_vectors_at_earth_location(observatory_location)
@@ -197,6 +208,50 @@ class WebGui:
         with self.lock:
             self.comm_failure = warn_comm_failure
 
+    # --- Manual control / home / alignment (main loop) ---
+
+    JOG_DEADMAN_S = 0.5
+
+    def enable_manual(self, home_source: Text, align_targets: list[str], aligned: bool, aligned_text: Text) -> None:
+        with self.lock:
+            self.manual_available = True
+            self.home_source = home_source
+            self.align_targets = list(align_targets)
+            self.aligned = aligned
+            self.aligned_text = aligned_text
+
+    def is_aligned(self) -> bool:
+        with self.lock:
+            return self.aligned
+
+    def get_jog(self) -> tuple[float, float] | None:
+        '''Current manual control rates in rad/s, or None (no button pressed / dead man's switch expired).'''
+        self.exit_if_dead()
+        with self.lock:
+            if time.monotonic() - self.jog_time > self.JOG_DEADMAN_S:
+                return None
+            if self.jog_rates == (0.0, 0.0):
+                return None
+            return (self.jog_rates[0] / 180 * math.pi, self.jog_rates[1] / 180 * math.pi)
+
+    def home_active(self) -> bool:
+        with self.lock:
+            return self.home_requested
+
+    def home_done(self) -> None:
+        with self.lock:
+            self.home_requested = False
+
+    def pop_align_request(self) -> str | None:
+        with self.lock:
+            req, self.align_request = self.align_request, None
+            return req
+
+    def set_aligned(self, text: Text) -> None:
+        with self.lock:
+            self.aligned = True
+            self.aligned_text = text
+
     def notify(self, text: Text) -> None:
         '''Show a message (e.g. from the limit monitor) in the GUI and, in English, in the terminal.'''
         with self.lock:
@@ -231,6 +286,10 @@ class WebGui:
                 'scope_side': self.scope_side,
                 'target_side': self.target_side,
                 'auto_flip': self.auto_flip,
+                'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
+                           'home_active': self.home_requested, 'align_targets': self.align_targets,
+                           'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
+                           'jogging': time.monotonic() - self.jog_time <= self.JOG_DEADMAN_S and self.jog_rates != (0.0, 0.0)},
                 'fixed_target': ({'az': _deg(self.fixed_target['az']), 'el': _deg(self.fixed_target['el']),
                                   'side': self.fixed_target['side']} if self.fixed_target else None),
             }
@@ -313,6 +372,45 @@ class WebGui:
         the main loop; returns {ok: True} or {ok: False, error: message}.
         '''
         with self.lock:
+            if name in ('track', 'flip_test') and self.manual_available and not self.aligned:
+                return _error(Msg('Align first (card "Control & alignment").'))
+            if name == 'jog':
+                if not self.manual_available:
+                    return _error(Msg('Manual control not available'))
+                r1 = float(data.get('r1', 0.0))
+                r2 = float(data.get('r2', 0.0))
+                if abs(r1) > 5.0 or abs(r2) > 5.0:
+                    return _error(Msg('Speed too high'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.home_requested = False
+                self.jog_rates = (r1, r2)
+                self.jog_time = time.monotonic()
+                return {'ok': True}
+            if name == 'jog_stop':
+                self.jog_rates = (0.0, 0.0)
+                return {'ok': True}
+            if name == 'home':
+                if not self.manual_available:
+                    return _error(Msg('Go-home not available'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.jog_rates = (0.0, 0.0)
+                self.home_requested = True
+                return {'ok': True}
+            if name == 'align':
+                target = data.get('target')
+                if not self.manual_available or not isinstance(target, str) or not target.strip():
+                    return _error(Msg('No alignment target given'))
+                target = target.strip()
+                if not target.startswith('sky:') and target not in self.align_targets:
+                    return _error(Msg('Unknown landmark'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.home_requested = False
+                self.jog_rates = (0.0, 0.0)
+                self.align_request = target
+                return {'ok': True}
             if name == 'track':
                 hex_id = data.get('hex')
                 if not isinstance(hex_id, str) or hex_id not in self.planes:
@@ -324,6 +422,8 @@ class WebGui:
             elif name == 'stop':
                 self.tracked_plane = None
                 self.fixed_target = None
+                self.home_requested = False
+                self.jog_rates = (0.0, 0.0)
             elif name == 'flip_test':
                 if self.telescope_azm_alt is None or self.mount_mode != 'eq':
                     return _error(Msg('Side change only in EQ mode with a known telescope position'))

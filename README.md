@@ -518,6 +518,14 @@ follows the browser). Translations are in `webgui_static/i18n_de.js`.
 In equatorial mode the header shows the pier side, and "Test side change" in the Meridian flip
 card holds the current direction and drives to it on the other side of the pole.
 
+#### Manual control and alignment in the browser
+
+With a Sky-Watcher mount in equatorial mode the card "Control & alignment" moves the axes
+(hold the arrow buttons or arrow keys), drives back to the home position and aligns NexPlane:
+point the telescope at a landmark (another location from `config.yaml`) or at a star or planet,
+then press "Telescope points at it now – align". The alignment is saved as `align.yaml`.
+Aircraft are only tracked after an alignment.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

@@ -4,6 +4,7 @@
 
 import argparse
 import math
+import os
 import sys
 import time
 import traceback
@@ -25,7 +26,7 @@ import sbs1
 import tracker
 import util
 
-from messages import Msg
+from messages import Msg, Text, of_exception
 from util import unwrap
 
 # The OpenGL GUI is only needed without --web. If OpenGL/GLUT is missing,
@@ -229,6 +230,33 @@ def main() -> None:
                     notify(warning)
         last_target_key: str | None = None
 
+        # Manual control, homing and alignment in the browser GUI.
+        manual: eq_flip.ManualControl | None = None
+        home_dec_raw: float | None = None
+        alignment_file = args.alignment or os.path.join(config.main_config_dir(), 'align.yaml')
+        if args.web and pointing is not None:
+            if limits_data is not None:
+                home = (limits_data['home_deg'][1] / 180 * math.pi, limits_data['home_deg'][2] / 180 * math.pi)
+                home_is_taught = True
+                home_dec_raw = home[1]
+            else:
+                assert isinstance(telescope, skywatcher.SkyWatcher)
+                home = (telescope._inquire_position(1), telescope._inquire_position(2))
+                home_is_taught = False
+            manual = eq_flip.ManualControl(telescope, home, home_is_taught,
+                                           float(config_data.get('max_slew_degrees_per_second', 5.0)))
+            align_targets = [name for name in config_data['locations'] if name != args.location]
+            aligned_text: Text = args.landmark or (Msg('from {file}', file=args.alignment) if args.alignment else '')
+            gui_iface.enable_manual(Msg('taught home position') if home_is_taught else Msg('position at NexPlane start'),
+                                    align_targets, bool(args.landmark or args.alignment), aligned_text)
+
+        def write_alignment(new_ra_cal: float, new_dec_cal: float) -> None:
+            '''Save the calibration in the same format as align.py (loadable with --alignment).'''
+            with open(alignment_file, 'w') as f:
+                f.write('# Telescope alignment data saved on ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
+                yaml.dump({'mount_mode': 'eq', 'calibration': {
+                    'ra': float(util.wrap_rad(new_ra_cal, 0)), 'dec': float(util.wrap_rad(new_dec_cal, 0))}}, f)
+
         # Main loop
         warn_comm_failure = False
         while True:
@@ -279,12 +307,51 @@ def main() -> None:
                     target_tracker.set_gains(kp, ki, kd)
                 last_gain_changes = gain_changes
 
-                if util.azm_alt_ang_dist(scope_azm_alt, unwrap(sun.az_el())) < 20/180*math.pi:
+                align_request = gui_iface.pop_align_request() if manual is not None else None
+                jog = gui_iface.get_jog() if manual is not None else None
+                homing = gui_iface.home_active() if manual is not None else False
+                if manual is not None and manual.moving and jog is None and not homing:
+                    manual.stop()
+
+                if manual is not None and align_request is not None:
+                    # Alignment from the browser GUI: telescope is pointing at align_request.
+                    target_tracker.stop()
+                    manual.stop()
+                    assert pointing is not None
+                    try:
+                        real_azm, real_alt = align.get_landmark_azm_alt(align_request, config_data, observatory_location)
+                        real_ra, real_dec = util.altaz_to_radec(real_alt, real_azm, observatory_location, util.get_current_time())
+                        raw_ra, raw_dec = telescope.get_ra_dec()
+                        new_ra_cal, new_dec_cal, align_side = eq_flip.calibrate(real_ra, real_dec, raw_ra, raw_dec, home_dec_raw)
+                        pointing.set_calibration(new_ra_cal, new_dec_cal)
+                        write_alignment(new_ra_cal, new_dec_cal)
+                        align_name = align_request[4:] if align_request.startswith('sky:') else align_request
+                        gui_iface.set_aligned(Msg('{name} (side {side})', name=align_name, side=align_side))
+                        done = Msg('Aligned on {name}, side {side}. Saved in {file}.',
+                                   name=align_name, side=align_side, file=alignment_file)
+                        if home_dec_raw is None:
+                            done += Msg('Without a safe area the side cannot be checked, side A assumed.')
+                        notify(done)
+                    except Exception as e:
+                        notify(Msg('Alignment failed: {error}', error=of_exception(e)))
+                elif manual is not None and jog is not None:
+                    # Manual control (also allowed near the Sun, so the user can drive back out).
+                    target_tracker.stop()
+                    manual.jog(*jog)
+                elif util.azm_alt_ang_dist(scope_azm_alt, unwrap(sun.az_el())) < 20/180*math.pi:
                     # We've strayed into the keep out circle around the Sun! Emergency Stop!
                     # The user can fix this with the hand controller.
                     target_tracker.stop()
+                    if manual is not None:
+                        manual.stop()
+                        gui_iface.home_done()
                     gui_airplanes.stop_tracking()
                     gui_offset_reader.reset_offsets()
+                elif manual is not None and homing:
+                    target_tracker.stop()
+                    if manual.home_step():
+                        gui_iface.home_done()
+                        notify(Msg('Home position reached.'))
                 elif fixed_target is not None and pointing is not None:
                     # Fixed point (pier-side flip test from the browser GUI).
                     fixed_ra, fixed_dec = util.altaz_to_radec(
@@ -305,6 +372,9 @@ def main() -> None:
                     pointing.command(target_tracker, fixed_ra, fixed_dec, forced_side=fixed_target['side'])
                 elif tracked_plane_hex_id is None:
                     # There is no airplane to track, so stop the tracker.
+                    target_tracker.stop()
+                elif manual is not None and not gui_iface.is_aligned() and tracked_plane_hex_id in planes:
+                    # Not aligned yet: do not drive to the plane.
                     target_tracker.stop()
                 elif tracked_plane_hex_id in planes:
                     # Extrapolate from the last known position and velocity of the plane to estimate the current position.
