@@ -574,6 +574,34 @@ longer focal length count more in the fit. Settings: `focal_lengths_mm: [150, 30
 "Forget alignment" discards sync points, model and correction (and on request
 `home_direction.yaml`), e.g. after tests indoors.
 
+### Gamepad
+
+A gamepad (tested with a PS4 controller over Bluetooth) controls NexPlane together with the
+browser GUI; the browser does not need focus. It is read from `/dev/input` directly (you may
+need `sudo usermod -aG input $USER`); `./gamepad.py --test` shows the buttons and axes.
+
+| Control | While tracking | Otherwise |
+| --- | --- | --- |
+| Left stick | correction | move the mount |
+| Right stick | fine correction | slow move |
+| R2 | faster | faster |
+| D-pad | small correction steps | |
+| ✕ / □ / ○ | accept sync point / delete last point / correction to 0 | |
+| △ | stop | stop |
+| R1 / L1 | next nearest reachable aircraft / previous | |
+| Options | next focal length | |
+
+```yaml
+gamepad:
+    enabled: true
+    name: ''             # part of the device name; empty = first gamepad
+    invert_x: false      # adapt the stick to the camera orientation
+    invert_y: false
+    swap_xy: false
+```
+
+All rates and the dead zone can be set in the same section (see `pad_control.DEFAULTS`).
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

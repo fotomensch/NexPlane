@@ -17,6 +17,8 @@ from typing import Any
 import align
 import axis_limits
 import eq_flip
+import gamepad
+import pad_control
 import reach_map
 import astronomical
 import config
@@ -27,7 +29,7 @@ import sbs1
 import tracker
 import util
 
-from messages import Msg, Text, of_exception
+from messages import Msg, Text, of_exception, to_json
 from util import unwrap
 
 # The OpenGL GUI is only needed without --web. If OpenGL/GLUT is missing,
@@ -188,6 +190,7 @@ def main() -> None:
         gui_iface = gui.Gui(args.bw, args.white_bg, layers)
 
     restart_location: str | None = None
+    pad: gamepad.Gamepad | None = None
     telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
         # Telescope control interface.
@@ -355,17 +358,27 @@ def main() -> None:
             pointing.set_calibration(pointing.model.lst() - ra_raw_h - h, math.pi / 2 - dec_raw_h)
             gui_iface.set_aligned(Msg('roughly from the home position (no landmark)'), rough=True)
             notify(Msg('Roughly aligned from the home position (the mount pointed at the pole when switched on, '
-                       'roughly north). Track a first aircraft, centre it and press “Accept (sync point)”.'))
+                       'roughly north). Track a first aircraft, centre it and press ✕.'))
             request_reach()
             return True
 
-        # Correction in the camera image (EQ mount, browser GUI).
+        # Correction in the camera image and gamepad (EQ mount, browser GUI).
+        padctl: pad_control.PadControl | None = None
+        pad_settings = pad_control.get_settings(config_data)
         if args.web and pointing is not None:
             gui_iface.enable_axis_correction()
+            if pad_settings['enabled']:
+                pad = gamepad.Gamepad(str(pad_settings['name'] or ''), float(pad_settings['deadzone']),
+                                      bool(pad_settings['rumble']), pad_settings['device'])
+                padctl = pad_control.PadControl(pad_settings, pad)
         if manual is not None and not (args.landmark or args.alignment):
             if not rough_align():
-                notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft in the list '
-                           'as aiming target, move it to the image centre by hand, then press “Aircraft is centred”.'))
+                notify(Msg('Not aligned. Align on a landmark, or without a landmark: choose an aircraft as aiming '
+                           'target (list or gamepad R1), move it to the image centre with the stick, press ✕.'))
+        recent_planes: list[str] = []
+        plane_history: list[str] = []
+        last_loop_t = time.monotonic()
+        max_slew = math.radians(float(config_data.get('max_slew_degrees_per_second', 5.0)))
 
         def img2ax(dx: float, dy: float) -> tuple[float, float]:
             '''Offset in the camera image (rad) -> offset of the axes (ra_raw, dec_raw).'''
@@ -423,8 +436,8 @@ def main() -> None:
             first = not gui_iface.is_aligned() or not pointing.model.points
             if first and (p_az is None or p_el is None):
                 if not gui_iface.is_aligned():
-                    notify(Msg('Not aligned yet: first choose an aircraft in the list as aiming target, move it '
-                               'to the image centre by hand, then accept it.'))
+                    notify(Msg('Not aligned yet: first choose an aircraft as aiming target (list or R1), move it '
+                               'to the image centre with the stick, then ✕.'))
                     return False
             if first and p_az is not None and p_el is not None:
                 # First point of this setup (no landmark or after rough alignment): do a full alignment
@@ -440,8 +453,8 @@ def main() -> None:
                 gui_iface.set_aligned(Msg('aircraft {name} (side {side})', name=callsign or hex_id, side=side))
                 store_home_ha()
                 msg = Msg('Aligned on {name} (point 1, side {side}). NexPlane now tracks by itself. Centre further '
-                          'aircraft in other directions and press “Accept (sync point)”; from 3 points on, the polar '
-                          'misalignment is included.', name=callsign or hex_id, side=side)
+                          'aircraft in other directions and press ✕; from 3 points on, the polar misalignment is '
+                          'included.', name=callsign or hex_id, side=side)
             elif p_az is not None and p_el is not None:
                 ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
                 res = pointing.sync(ra_t, dec_t, raw_ra, raw_dec, callsign or hex_id or '', gui_iface.get_focal(), sensor_mm)
@@ -490,6 +503,66 @@ def main() -> None:
                        name=f' ({name})' if name else '', left=len(pointing.model.points))
                    + (model_text() or Msg('Zero point alignment only.')))
             request_reach()
+            return True
+
+        def compass(az: float) -> Msg:
+            '''Name of the compass direction (8 directions) for an azimuth.'''
+            names = [Msg('north'), Msg('north-east'), Msg('east'), Msg('south-east'),
+                     Msg('south'), Msg('south-west'), Msg('west'), Msg('north-west')]
+            return names[int(((math.degrees(az) % 360) + 22.5) // 45) % 8]
+
+        def plane_usable(hex_id: str) -> bool:
+            '''Can the mount reach the aircraft now on at least one pier side (within the safe area)?'''
+            if pointing is None or limit_guard is None:
+                return True
+            _, p_az, p_el = plane_info(hex_id)
+            if p_az is None or p_el is None:
+                return False
+            ra_t, dec_t = util.altaz_to_radec(p_el, p_az, observatory_location, util.get_current_time())
+            raw_ra, raw_dec = telescope.get_ra_dec()
+            return any(c.feasible for c in pointing.candidates(ra_t, dec_t, raw_ra, raw_dec).values())
+
+        def select_plane(direction: str, current: str | None) -> bool:
+            '''Gamepad R1/L1: track the next nearest reachable aircraft ("next") or the previous one.'''
+            min_el = math.radians(float(pad_settings['min_elevation_degrees']))
+            new: str | None = None
+            if direction == 'next' and not gui_iface.is_aligned():
+                new = pad_control.pick_aim(planes, current, recent_planes, min_el)
+            elif direction == 'next':
+                new = pad_control.pick_next(planes, scope_azm_alt[0], scope_azm_alt[1], current,
+                                            recent_planes, min_el, plane_usable)
+            else:
+                while plane_history and new is None:
+                    h = plane_history.pop()
+                    if h in planes and h != current:
+                        new = h
+            if new is None:
+                notify(Msg('Gamepad: no further reachable aircraft.') if direction == 'next'
+                       else Msg('Gamepad: no previous aircraft.'))
+                return False
+            res = gui_iface.command('track', {'hex': new})
+            if not res.get('ok'):
+                notify(Msg('Gamepad: {error}', error=res.get('error')))
+                return False
+            if direction == 'next' and current is not None:
+                plane_history.append(current)
+                del plane_history[:-10]
+            recent_planes.append(new)
+            del recent_planes[:-6]
+            callsign, p_az, p_el = plane_info(new)
+            if not gui_iface.is_aligned():
+                if p_az is not None and p_el is not None:
+                    notify(Msg('Gamepad: aiming target {name} – direction {dir}, {el:.0f}° high. Move it to the '
+                               'image centre by hand, then ✕.', name=callsign or new, dir=compass(p_az),
+                               el=math.degrees(p_el)))
+                else:
+                    notify(Msg('Gamepad: aiming target {name}. Move it to the image centre by hand, then ✕.',
+                               name=callsign or new))
+                return True
+            if p_el is not None:
+                notify(Msg('Gamepad: tracking {name} ({el:.0f}° high).', name=callsign or new, el=math.degrees(p_el)))
+            else:
+                notify(Msg('Gamepad: tracking {name}.', name=callsign or new))
             return True
 
         # Main loop
@@ -589,7 +662,11 @@ def main() -> None:
                     except axis_limits.LimitError as e:
                         notify(Msg('Changing the profile is not possible: {error}', error=of_exception(e)))
 
-                # Correction and alignment commands from the browser
+                # Correction (browser buttons) and gamepad
+                now_m = time.monotonic()
+                dt = min(now_m - last_loop_t, 1.0)
+                last_loop_t = now_m
+                pad_jog: tuple[float, float] | None = None
                 if args.web and pointing is not None:
                     for kind, a, b in gui_iface.pop_corr_requests():
                         if kind == 'step':
@@ -615,13 +692,76 @@ def main() -> None:
                             notify(txt)
                         elif kind == 'pop':
                             remove_last_point(int(a) if a >= 0 else None)
+                if padctl is not None and pad is not None and pointing is not None:
+                    tracking_now = (tracked_plane_hex_id is not None or fixed_target is not None) and gui_iface.is_aligned()
+                    for press in pad.pop_presses():
+                        st = padctl.step(press)
+                        if press == 'triangle':
+                            gui_iface.command('stop', {})
+                            target_tracker.stop()
+                            if manual is not None:
+                                manual.stop()
+                            gui_iface.home_done()
+                            tracked_plane_hex_id = None
+                            fixed_target = None
+                            tracking_now = False
+                            notify(Msg('STOP (gamepad).'))
+                            pad.rumble(0.9, 0.9, 400)
+                        elif press == 'circle':
+                            pointing.reset_correction()
+                            notify(Msg('Correction set to 0 (gamepad).'))
+                            pad.rumble(0.5, 0.5, 90, 2)
+                        elif press == 'cross':
+                            if save_correction(tracked_plane_hex_id):
+                                pad.rumble(0.7, 0.7, 300)
+                            else:
+                                pad.rumble(1.0, 1.0, 90, 3)
+                        elif press == 'options':
+                            cur = gui_iface.get_focal()
+                            nxt = next((f for f in focal_steps if f > cur + 1), focal_steps[0])
+                            gui_iface.command('set_focal', {'mm': nxt})
+                            notify(Msg('Focal length for sync points: {mm:.0f} mm (gamepad).', mm=nxt))
+                            pad.rumble(0.4, 0.4, 100, focal_steps.index(nxt) + 1)
+                        elif press == 'square':
+                            if remove_last_point():
+                                pad.rumble(0.5, 0.5, 90, 2)
+                            else:
+                                pad.rumble(1.0, 1.0, 90, 3)
+                        elif press in ('r1', 'l1'):
+                            if select_plane('next' if press == 'r1' else 'previous', tracked_plane_hex_id):
+                                pad.rumble(0.4, 0.4, 120)
+                            else:
+                                pad.rumble(1.0, 1.0, 90, 3)
+                        elif st is not None:
+                            pointing.add_correction(*img2ax(*st))
+                            pad.rumble(0.25, 0.25, 40)
+                    axes = pad.axes()
+                    stick = any(axes[k] != 0.0 for k in ('lx', 'ly', 'rx', 'ry'))
+                    if tracking_now:
+                        cx, cy = padctl.correction_rate(axes)
+                        if cx or cy:
+                            pointing.add_correction(*img2ax(cx * dt, cy * dt))
+                    elif stick and manual is not None:
+                        if gui_iface.home_active():
+                            gui_iface.home_done()
+                            notify(Msg('Go-home cancelled (gamepad).'))
+                        jx, jy = padctl.jog_rate(axes)
+                        d_ra, d_dec = img2ax(jx, jy)
+                        r1, r2 = -d_ra, d_dec          # Axis 1 runs opposite to ra_raw
+                        m = max(abs(r1), abs(r2))
+                        if m > max_slew:
+                            r1, r2 = r1 * max_slew / m, r2 * max_slew / m
+                        pad_jog = (r1, r2)
                 if args.web and pointing is not None:
                     gui_iface.set_corr_info(
                         {'ra': math.degrees(pointing.corr_ra), 'dec': math.degrees(pointing.corr_dec),
-                         'model': pointing.model.status(obs_lat)})
+                         'model': pointing.model.status(obs_lat)},
+                        None if pad is None else {'connected': pad.connected, 'name': pad.name, 'error': to_json(pad.error)})
 
                 align_request = gui_iface.pop_align_request() if manual is not None else None
                 jog = gui_iface.get_jog() if manual is not None else None
+                if jog is None:
+                    jog = pad_jog
                 homing = gui_iface.home_active() if manual is not None else False
                 if manual is not None and manual.moving and jog is None and not homing:
                     manual.stop()
@@ -762,6 +902,8 @@ def main() -> None:
         restart_location = r.location
     finally:
         # Stop the telescope and clean up.
+        if pad is not None:
+            pad.close()
         if telescope is not None:
             try:
                 telescope.slew_azmalt(0, 0)

@@ -177,7 +177,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       </div>
       <button class="btn" id="btn-align" style="width:100%;margin-top:6px">Telescope points at it now – align</button>
       <div class="hint" style="margin:10px 0 4px">Or on an aircraft: click it in the list or map (aiming target), move the telescope to centre it, then</div>
-      <button class="btn" id="btn-align-plane" style="width:100%" title="Same as “Accept (sync point)” in the Correction card">Aircraft is centred – accept as sync point</button>
+      <button class="btn" id="btn-align-plane" style="width:100%" title="Same as gamepad ✕ and “Accept (sync point)” in the Correction card">Aircraft is centred – accept as sync point</button>
       <button class="btn" id="btn-forget" style="width:100%;margin-top:6px" title="Discard sync points, model and correction, e.g. after tests in the living room">Forget alignment</button>
     </div>
     <div class="card" id="target-card">
@@ -232,8 +232,8 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
         </div>
       </div>
       <div class="row" id="corr-btns" style="margin-top:8px;display:none;gap:6px">
-        <button class="btn" id="btn-corr-save" style="flex:1" title="Aircraft is centred: accept as sync point">Accept (sync point)</button>
-        <button class="btn" id="btn-model-pop" title="Delete last sync point">Delete last</button>
+        <button class="btn" id="btn-corr-save" style="flex:1" title="Aircraft is centred: accept as sync point (gamepad ✕)">Accept (sync point)</button>
+        <button class="btn" id="btn-model-pop" title="Delete last sync point (gamepad □)">Delete last</button>
       </div>
       <div class="row" id="focal-row" style="margin-top:8px;display:none;gap:6px;align-items:center">
         <span class="hint">Focal length when accepting</span>
@@ -242,6 +242,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <div id="model-status" style="margin-top:6px;font-size:13px"></div>
       <div id="model-points" style="margin-top:4px;font-size:12px"></div>
       <div class="hint" style="margin-top:6px" id="corr-hint">Keys: W/A/S/D 0.1° each, with Shift 0.5°, Q resets</div>
+      <div style="margin-top:6px;font-size:13px" id="pad-status"></div>
     </div>
     <div class="card">
       <h2>Aircraft <span id="n-planes"></span></h2>
@@ -465,11 +466,11 @@ function updatePanel() {
   if (M.available) {
     $('btn-align-plane').disabled = !S.tracked || !S.axis_correction;
     $('align-status').innerHTML = M.aligned ? `${esc(T('Aligned:'))} <b>${esc(msgText(M.aligned_text))}</b>` +
-        (M.rough_aligned ? ` <span class="hint">${esc(T('– track a first aircraft, centre it, accept it'))}</span>` : '')
+        (M.rough_aligned ? ` <span class="hint">${esc(T('– track a first aircraft, centre it, ✕'))}</span>` : '')
       : `<span class="warn">${esc(T('Not aligned.'))}</span> <span class="hint">` +
         esc(T('With a landmark: point the telescope at it and align below. Without a landmark: click an aircraft in ' +
-              'the list – it becomes the aiming target, NexPlane does not move by itself yet. Move the ' +
-              'telescope onto it by hand, centred, then press “Aircraft is centred”.')) + '</span>' +
+              'the list (or gamepad R1) – it becomes the aiming target, NexPlane does not move by itself yet. Move the ' +
+              'telescope onto it by hand, centred, then ✕ or “Accept”.')) + '</span>' +
         (S.tracked ? `<br>${esc(T('Aiming target:'))} <b>${esc((S.planes.find(p => p.hex === S.tracked) || {}).callsign || S.tracked)}</b>` : '');
     $('btn-home').textContent = M.home_active ? T('Moving to home position … (Esc stops)') : T('Go to home position');
     $('home-hint').textContent = T('Target: {where}', {where: M.home_source});
@@ -558,6 +559,10 @@ function updatePanel() {
       $('focal-sel').innerHTML = steps.map(s => `<option value="${s}" ${s === F.mm ? 'selected' : ''}>${Math.round(s)} mm</option>`).join('');
     }
     $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft. When the tracked aircraft is centred, “Accept” turns it into a sync point.');
+    const G = S.gamepad;
+    $('pad-status').innerHTML = !G ? `<span class="hint">${esc(T('Gamepad disabled (config.yaml).'))}</span>`
+      : G.connected ? `🎮 <b>${esc(G.name)}</b> ${esc(T('connected'))} <span class="hint">${esc(T('– Stick: correction/move, R2 faster, ✕ sync point, □ delete last, ○ correction 0, △ STOP, R1/L1 aircraft, Options focal length'))}</span>`
+      : `<span class="warn">${esc(T('🎮 not connected'))}</span> <span class="hint">${esc(msgText(G.error))}</span>`;
   } else {
     $('o-az').textContent = fmt(S.offsets.az, 2) + '°';
     $('o-el').textContent = fmt(S.offsets.el, 2) + '°';

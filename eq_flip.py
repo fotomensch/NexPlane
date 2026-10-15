@@ -312,7 +312,7 @@ class EqPointing:
         return res
 
     # ------------------------------------------------------------------
-    # Correction (keyboard, browser)
+    # Correction (gamepad / keyboard)
     # ------------------------------------------------------------------
 
     MIN_COS = 0.15   # near the pole the RA axis barely moves the image; limit the gain

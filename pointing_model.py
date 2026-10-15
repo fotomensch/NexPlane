@@ -229,7 +229,7 @@ class Model:
             if ok and max(abs(p[2]), abs(p[3])) > self.MAX_TILT:
                 ok = False
                 result['warn'] = Msg('The calculated polar misalignment is implausibly large ({tilt:.1f}°), '
-                                     'probably a wrongly centred point. Delete the last point?',
+                                     'probably a wrongly centred point. Delete the last point (□)?',
                                      tilt=math.degrees(max(abs(p[2]), abs(p[3]))))
             if ok:
                 self.set_params(p[2], p[3], p[4], True)

@@ -115,6 +115,7 @@ class WebGui:
         self.axis_correction = False
         self.corr_queue: list[tuple[str, float, float]] = []
         self.corr_info: dict[str, Any] = {}
+        self.gamepad_info: dict[str, Any] | None = None
         self.focal_mm = 300.0
         self.focal_steps: list[float] = [150.0, 300.0, 600.0]
         self.reach: dict[str, Any] | None = None
@@ -263,9 +264,10 @@ class WebGui:
             q, self.corr_queue = self.corr_queue, []
             return q
 
-    def set_corr_info(self, info: dict[str, Any]) -> None:
+    def set_corr_info(self, info: dict[str, Any], gamepad: dict[str, Any] | None) -> None:
         with self.lock:
             self.corr_info = info
+            self.gamepad_info = gamepad
 
     def set_focal_options(self, steps: list[float], default: float) -> None:
         with self.lock:
@@ -393,6 +395,7 @@ class WebGui:
                 'axis_correction': self.axis_correction,
                 'focal': {'mm': self.focal_mm, 'steps': self.focal_steps},
                 'correction': self.corr_info,
+                'gamepad': self.gamepad_info,
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
                           'status': to_json(self.reach_status)},
                 'location': {'current': self.location,
