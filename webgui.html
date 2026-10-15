@@ -119,6 +119,16 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
     <div id="maperr">Map not available (map library could not be loaded).<br>The sky view still works.</div>
   </div>
   <aside>
+    <div class="card" id="loc-card" data-collapsed-default="1">
+      <h2>Location</h2>
+      <div class="kv" style="margin-bottom:8px">
+        <span>Active</span><span id="loc-current">–</span>
+        <span>Coordinates</span><span id="loc-coords">–</span>
+      </div>
+      <select id="loc-sel" class="btn" style="width:100%"></select>
+      <button class="btn" id="btn-loc" style="width:100%;margin-top:6px">Change location</button>
+      <div class="hint" style="margin-top:6px">The mount is stopped and NexPlane restarts with the new location. Alignment depends on the location and must be redone afterwards.</div>
+    </div>
     <div class="card" id="limits-card">
       <h2>Safe area</h2>
       <div class="kv" style="margin-bottom:8px">
@@ -415,6 +425,15 @@ function updatePanel() {
     $('f-side').textContent = fx.side ? T('Side {side}', {side: fx.side}) : T('being determined …');
     $('f-off').textContent = S.telescope ? `${fmt(angDist(S.telescope, fx), 2)}°` : '–';
   }
+  const L = S.location || {current: '', presets: []};
+  const cur = L.presets.find(p => p.name === L.current);
+  $('loc-current').textContent = L.current || '–';
+  $('loc-coords').textContent = cur ? `${fmt(cur.lat, 4)}°, ${fmt(cur.lon, 4)}°, ${fmt(cur.alt, 0)} m` : '–';
+  const lkey = LANG + '|' + L.current + '|' + L.presets.map(p => p.name).join('|');
+  if ($('loc-sel').dataset.key !== lkey) {
+    $('loc-sel').dataset.key = lkey;
+    $('loc-sel').innerHTML = L.presets.map(p => `<option value="${esc(p.name)}" ${p.name === L.current ? 'selected' : ''}>${esc(p.name)}${p.name === L.current ? ' ' + esc(T('(active)')) : ''}</option>`).join('');
+  }
   const P = S.profiles || {list: [], active: ''};
   const R = S.reach || {};
   $('lim-active').textContent = P.active || T('no safe area configured');
@@ -520,6 +539,15 @@ for (const id of ['opt-blind', 'opt-blind-alt']) {
   try { const v = localStorage.getItem(key); if (v !== null) { if (el.type === 'checkbox') el.checked = v === '1'; else el.value = v; } } catch (e) {}
   el.addEventListener('change', () => { try { localStorage.setItem(key, el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value); } catch (e) {} });
 }
+
+// ---- Location ----
+$('btn-loc').onclick = () => {
+  const name = $('loc-sel').value;
+  if (!S || !S.location || name === S.location.current) { addLocalMsg(T('Please choose a different location.')); return; }
+  if (confirm(T('Change location to "{name}"? The mount is stopped, NexPlane restarts and must be aligned again afterwards.', {name}))) {
+    api('set_location', {name}).then(j => { if (j && j.ok) addLocalMsg(T('Changing location, the page will reload shortly …')); });
+  }
+};
 
 // ---- Switch language ----
 $('opt-lang').value = LANG;

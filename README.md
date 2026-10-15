@@ -543,6 +543,9 @@ After alignment, the sky view and the ground map tint the directions the mount c
 within the axis limits on either pier side. On the map this is shown for aircraft at the flight
 altitude selected in the "Safe area" card.
 
+The card "Location" switches between the locations in `config.yaml`; NexPlane stops the mount
+and restarts itself with the new location.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

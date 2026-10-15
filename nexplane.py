@@ -94,6 +94,36 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
 
     return args, config_data
 
+class RestartRequested(Exception):
+    '''Restart NexPlane with a different location (requested from the browser GUI).'''
+    def __init__(self, location: str):
+        super().__init__(location)
+        self.location = location
+
+def restart_argv(location: str) -> list[str]:
+    '''
+    Command line for the restart: same invocation, but with the new location, without
+    alignment (it depends on the location) and without opening the browser again.
+    '''
+    drop_with_value = {'--location', '--alignment', '--landmark'}
+    out: list[str] = []
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        name = a.split('=', 1)[0]
+        if name in drop_with_value:
+            i += 1 if '=' in a else 2
+            continue
+        out.append(a)
+        i += 1
+    out += ['--location', location]
+    if '--web' not in out:
+        out.append('--web')
+    if '--no-browser' not in out:
+        out.append('--no-browser')
+    return [sys.executable, sys.argv[0]] + out
+
 def main() -> None:
     args, config_data = parse_args_and_config()
 
@@ -124,6 +154,9 @@ def main() -> None:
         exit_exceptions = (webgui.Exit,)
         gui_iface = webgui.WebGui(observatory_location, kp, ki, kd, port=args.web_port,
                                   open_browser=not args.no_browser, mount_mode=args.mount_mode)
+        gui_iface.set_locations(args.location, {
+            name: (float(loc['lat_degrees']), float(loc['lon_degrees']), float(loc['alt_meters']))
+            for name, loc in config_data['locations'].items()})
         gui_airplanes = gui_gain_reader = gui_offset_reader = gui_iface
         gui_sun_moon = gui_telescope = gui_comm_warning = gui_iface
     else:
@@ -154,6 +187,7 @@ def main() -> None:
 
         gui_iface = gui.Gui(args.bw, args.white_bg, layers)
 
+    restart_location: str | None = None
     telescope: Any = None   # None until the mount answers; the finally block below checks it
     try:
         # Telescope control interface.
@@ -326,6 +360,15 @@ def main() -> None:
                     target_tracker.set_gains(kp, ki, kd)
                 last_gain_changes = gain_changes
 
+                new_location = gui_iface.pop_location_request() if args.web else None
+                if new_location is not None:
+                    notify(Msg('Changing location to {name}: the mount is stopped and NexPlane restarts.', name=new_location))
+                    target_tracker.stop()
+                    if manual is not None:
+                        manual.stop()
+                    time.sleep(2.5)   # let it coast down; both axes must be stopped on restart
+                    raise RestartRequested(new_location)
+
                 if args.web and limit_guard is not None:
                     want_off = gui_iface.get_limits_off()
                     if want_off != limit_guard.bypass:
@@ -495,6 +538,8 @@ def main() -> None:
                 warn_comm_failure = True
     except exit_exceptions:
         pass
+    except RestartRequested as r:
+        restart_location = r.location
     finally:
         # Stop the telescope and clean up.
         if telescope is not None:
@@ -507,6 +552,12 @@ def main() -> None:
         serial_iface.close()
         gui_iface.close()
         sbs1_receiver.close()
+
+    if restart_location is not None:
+        argv = restart_argv(restart_location)
+        print('Restarting:', ' '.join(argv))
+        sys.stdout.flush()
+        os.execv(argv[0], argv)
 
 if __name__ == '__main__':
     main()

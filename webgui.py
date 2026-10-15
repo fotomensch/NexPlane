@@ -102,6 +102,9 @@ class WebGui:
         self.align_targets: list[str] = []
         self.aligned = False
         self.aligned_text: Text = ''
+        self.location = ''
+        self.location_presets: dict[str, tuple[float, float, float]] = {}
+        self.location_request: str | None = None
         self.profiles: list[str] = []
         self.profile = ''
         self.profile_request: str | None = None
@@ -228,6 +231,11 @@ class WebGui:
             self.aligned = aligned
             self.aligned_text = aligned_text
 
+    def set_locations(self, current: str, presets: dict[str, tuple[float, float, float]]) -> None:
+        with self.lock:
+            self.location = current
+            self.location_presets = dict(presets)
+
     def set_profiles(self, names: list[str], active: str) -> None:
         with self.lock:
             self.profiles = list(names)
@@ -267,6 +275,12 @@ class WebGui:
         with self.lock:
             self.reach_status = Msg('calculating …')
             self.reach_version += 1
+
+    def pop_location_request(self) -> str | None:
+        self.exit_if_dead()
+        with self.lock:
+            req, self.location_request = self.location_request, None
+            return req
 
     def get_jog(self) -> tuple[float, float] | None:
         '''Current manual control rates in rad/s, or None (no button pressed / dead man's switch expired).'''
@@ -335,6 +349,9 @@ class WebGui:
                 'axis_rel': self.axis_rel,
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
                           'status': to_json(self.reach_status)},
+                'location': {'current': self.location,
+                             'presets': [{'name': n, 'lat': v[0], 'lon': v[1], 'alt': v[2]}
+                                         for n, v in self.location_presets.items()]},
                 'manual': {'available': self.manual_available, 'home_source': to_json(self.home_source),
                            'home_active': self.home_requested, 'align_targets': self.align_targets,
                            'aligned': self.aligned, 'aligned_text': to_json(self.aligned_text),
@@ -447,6 +464,18 @@ class WebGui:
                 self.home_requested = False
                 self.jog_rates = (0.0, 0.0)
                 self.profile_request = prof
+                return {'ok': True}
+            if name == 'set_location':
+                loc = data.get('name')
+                if not isinstance(loc, str) or loc not in self.location_presets:
+                    return _error(Msg('Unknown location'))
+                if loc == self.location:
+                    return _error(Msg('This location is already active'))
+                self.tracked_plane = None
+                self.fixed_target = None
+                self.home_requested = False
+                self.jog_rates = (0.0, 0.0)
+                self.location_request = loc
                 return {'ok': True}
             if name == 'jog':
                 if not self.manual_available:
