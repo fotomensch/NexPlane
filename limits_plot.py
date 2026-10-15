@@ -60,17 +60,20 @@ def _edge_kinds(n: int, crossings: list[tuple[int, int]]) -> list[str]:
 # Terminal
 # ---------------------------------------------------------------------------
 
-def render_ascii(home: Point, boundary: list[Point], current: Point, width: int, height: int) -> list[str]:
+def render_ascii(home: Point, boundary: list[Point], current: Point, width: int, height: int,
+                 exclusions: 'list[list[Point]] | tuple[()]' = ()) -> list[str]:
     '''
     Returns height lines with at most width characters each.
     Characters: digits/letters = boundary points, H = home, @ = current position,
-    . = boundary, : = closing line to point 1, ! = edge that crosses another one.
+    . = boundary, : = closing line to point 1, ! = edge that crosses another one,
+    x = boundary of an exclusion zone.
     '''
     width = max(width, 20)
     height = max(height, 6)
     rel_b = _rel(boundary, home)
     rel_c = _rel([current], home)[0]
-    x0, x1, y0, y1 = _bounds(rel_b + [(0.0, 0.0), rel_c])
+    rel_x = [_rel(z, home) for z in exclusions]
+    x0, x1, y0, y1 = _bounds(rel_b + [(0.0, 0.0), rel_c] + [p for z in rel_x for p in z])
 
     plot_h = height - 1   # last line for the axis labels
     grid = [[' '] * width for _ in range(plot_h)]
@@ -97,6 +100,18 @@ def render_ascii(home: Point, boundary: list[Point], current: Point, width: int,
                 y = round(a[1] + (b[1] - a[1]) * s / steps)
                 if grid[y][x] in ' .:':
                     grid[y][x] = ch
+    for zone in rel_x:
+        m = len(zone)
+        for i in (range(m) if m >= 3 else range(max(m - 1, 0))):
+            a, b = cell(zone[i]), cell(zone[(i + 1) % m])
+            steps = max(abs(b[0] - a[0]), abs(b[1] - a[1]), 1)
+            for st in range(steps + 1):
+                x = round(a[0] + (b[0] - a[0]) * st / steps)
+                y = round(a[1] + (b[1] - a[1]) * st / steps)
+                if grid[y][x] in ' .:':
+                    grid[y][x] = 'x'
+        for p in zone:
+            put(cell(p), 'X')
     for i, p in enumerate(rel_b):
         put(cell(p), _label(i))
     put(cell((0.0, 0.0)), 'H')
@@ -118,13 +133,16 @@ def _nice_step(span: float) -> float:
             return float(m * mag)
     return float(10 * mag)
 
-def write_svg(path: str, home: Point, boundary: list[Point], current: Point, margin: float, status: str) -> None:
-    '''Write an SVG preview of the outline and the allowed area (incl. safety margin).'''
+def write_svg(path: str, home: Point, boundary: list[Point], current: Point, margin: float, status: str,
+              exclusions: 'list[list[Point]] | tuple[()]' = ()) -> None:
+    '''Write an SVG preview of the outline, exclusion zones and the allowed area (incl. safety margin).'''
     W, H = 900, 700
     L, R, T, B = 70, 30, 100, 60
     rel_b = _rel(boundary, home)
     rel_c = _rel([current], home)[0]
-    x0, x1, y0, y1 = _bounds(rel_b + [(0.0, 0.0), rel_c])
+    rel_x = [_rel(z, home) for z in exclusions]
+    x0, x1, y0, y1 = _bounds(rel_b + [(0.0, 0.0), rel_c] + [p for z in rel_x for p in z])
+    holes = [z for z in exclusions if len(z) >= 3]
 
     def sx(x: float) -> float:
         return L + (x - x0) / (x1 - x0) * (W - L - R)
@@ -168,7 +186,7 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
                 x = x0 + (i + 0.5) / nx * (x1 - x0)
                 y = y1 - (j + 0.5) / ny * (y1 - y0)
                 p = (home[0] + math.radians(x), home[1] + math.radians(y))
-                if axis_limits.clearance(p, boundary, margin) >= 0:
+                if axis_limits.clearance(p, boundary, margin, holes) >= 0:
                     out.append(f'<rect x="{L + i * cw:.1f}" y="{T + j * ch:.1f}" width="{cw + 0.4:.1f}" '
                                f'height="{ch + 0.4:.1f}" fill="#cfe8d2"/>')
         poly_pts = ' '.join(f'{sx(p[0]):.1f},{sy(p[1]):.1f}' for p in rel_b)
@@ -184,6 +202,19 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
                      'crossing': 'stroke="#d0021b" stroke-width="3.5"'}[kinds[i]]
             out.append(f'<line x1="{sx(a[0]):.1f}" y1="{sy(a[1]):.1f}" x2="{sx(b[0]):.1f}" y2="{sy(b[1]):.1f}" {style}/>')
 
+    # Exclusion zones
+    for k, zone in enumerate(rel_x, start=1):
+        if not zone:
+            continue
+        pts = ' '.join(f'{sx(p[0]):.1f},{sy(p[1]):.1f}' for p in zone)
+        tag = 'polygon' if len(zone) >= 3 else 'polyline'
+        out.append(f'<{tag} points="{pts}" fill="#f4c7c7" fill-opacity="0.7" stroke="#d0021b" '
+                   'stroke-width="2" stroke-dasharray="5 4"/>')
+        cxz = sum(p[0] for p in zone) / len(zone)
+        cyz = sum(p[1] for p in zone) / len(zone)
+        out.append(f'<text x="{sx(cxz):.1f}" y="{sy(cyz):.1f}" text-anchor="middle" fill="#9b0016" '
+                   f'font-weight="bold">Exclusion zone {k}</text>')
+
     # Points
     for i, p in enumerate(rel_b):
         out.append(f'<circle cx="{sx(p[0]):.1f}" cy="{sy(p[1]):.1f}" r="5" fill="#2b5797"/>')
@@ -194,10 +225,10 @@ def write_svg(path: str, home: Point, boundary: list[Point], current: Point, mar
 
     # Title and legend
     out.append(f'<text x="{L}" y="26" font-size="17" font-weight="bold" fill="#111">'
-               f'Safe area ({n} boundary points, safety margin {deg(margin):.1f} degrees)</text>')
+               f'Safe area ({n} boundary points, {len(rel_x)} exclusion zone(s), safety margin {deg(margin):.1f} degrees)</text>')
     out.append(f'<text x="{L}" y="48" fill="{"#d0021b" if not valid else "#1e7b34"}">{escape(status)}</text>')
     legend = [('#2b5797', 'boundary'), ('#888', 'closing line to point 1'),
-              ('#d0021b', 'crossing edges'), ('#cfe8d2', 'allowed area'),
+              ('#d0021b', 'crossing edges'), ('#cfe8d2', 'allowed area'), ('#f4c7c7', 'exclusion zone'),
               ('#e67e00', 'current position')]
     lx = float(L)
     for color, text in legend:

@@ -464,6 +464,12 @@ axis_limits:
 driving into the edge. This is a software protection: it does not replace supervision or a
 reachable power switch.
 
+#### Exclusion zones
+
+Areas inside the outline that the mount must not enter, for example where the back of a long
+tube hits the pier. In `teach_limits.py` press `n` to start a zone, `m` for its corners and `e`
+to end it. `--edit` loads an existing file, e.g. to add zones later.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

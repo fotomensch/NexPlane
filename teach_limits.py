@@ -11,15 +11,23 @@ Procedure:
      boundary points in order with "m". The points are connected into an
      outline in this order. Where the permitted range changes
      sharply, set more points.
-  5. Save with "s", quit with "q".
+  5. Optional: exclusion zones. These are areas INSIDE the outline that the
+     mount must not enter (e.g. where the rear of a long tube hits the
+     tripod or pier). "n" starts an exclusion zone, then drive along its boundary
+     in order with "m", "e" ends it.
+  6. Save with "s", quit with "q".
+
+With --edit an existing file is loaded, e.g. to add exclusion zones later.
 
 Keys:
   Arrow left/right    move axis 1 (RA)         while held down
   Arrow up/down       move axis 2 (Dec)        while held down
   Space               stop immediately
   + / -               change speed
-  m                   store current position as boundary point
+  m                   store current position as boundary point (outline or current exclusion zone)
   u                   discard last boundary point
+  n                   start new exclusion zone
+  e                   end exclusion zone, back to the outline
   g                   save graphic of the outline as SVG file
   s                   save (also writes the graphic)
   q                   quit (motors are stopped)
@@ -63,6 +71,8 @@ def parse_args_and_config() -> tuple[argparse.Namespace, dict[str, Any]]:
     settings = axis_limits.get_settings(config_data) or dict(axis_limits.DEFAULTS)
     parser.add_argument('--output', type=str, default=None,
                         help='Output file (default: axis_limits.file from config.yaml, or limits.yaml)')
+    parser.add_argument('--edit', action='store_true',
+                        help='Load an existing file and continue editing it (e.g. to add exclusion zones)')
     parser.add_argument('--check', action='store_true',
                         help='Check mode: load the saved outline and enable the limit guard')
     parser.add_argument('--deadman', type=float, default=0.8,
@@ -100,6 +110,8 @@ class Teacher:
         self.pos = {1: mount._inquire_position(1), 2: mount._inquire_position(2)}
         self.home = dict(self.pos)
         self.boundary: list[tuple[float, float]] = []
+        self.exclusions: list[list[tuple[float, float]]] = []
+        self.editing: int | None = None     # Index of the exclusion zone being edited, None = outline
         self.preview_path = os.path.splitext(output)[0] + '_preview.svg'
         self.saved = True
         self.check_mode = False
@@ -124,26 +136,62 @@ class Teacher:
             if self.cmd[axis] != 0:
                 self.cmd[axis] = math.copysign(self.speed, self.cmd[axis])
 
+    def _target(self) -> list[tuple[float, float]]:
+        return self.boundary if self.editing is None else self.exclusions[self.editing]
+
+    def target_name(self) -> str:
+        return 'Outline' if self.editing is None else f'Exclusion zone {self.editing + 1}'
+
     def mark(self) -> None:
-        self.boundary.append((self.pos[1], self.pos[2]))
+        target = self._target()
+        target.append((self.pos[1], self.pos[2]))
         self.saved = False
-        self.message = f'Point {len(self.boundary)} marked.'
+        self.message = f'{self.target_name()}: point {len(target)} marked.'
 
     def undo(self) -> None:
-        '''Discard the last boundary point.'''
-        if self.boundary:
-            self.boundary.pop()
+        '''Discard the last point of the outline or zone being edited (an empty zone is removed).'''
+        target = self._target()
+        if target:
+            target.pop()
             self.saved = False
-            self.message = 'Last point discarded.'
+            self.message = f'{self.target_name()}: last point discarded.'
+        elif self.editing is not None:
+            del self.exclusions[self.editing]
+            self.editing = None
+            self.saved = False
+            self.message = 'Empty exclusion zone removed, back to the outline.'
         else:
             self.message = 'There are no boundary points.'
+
+    def new_exclusion(self) -> None:
+        if self.editing is not None and len(self.exclusions[self.editing]) < 3:
+            self.message = f'{self.target_name()} has fewer than 3 points. Finish it first or clear it with "u".'
+            return
+        self.exclusions.append([])
+        self.editing = len(self.exclusions) - 1
+        self.message = (f'{self.target_name()} started: mark its boundary in order with "m", '
+                        '"e" ends it.')
+
+    def end_exclusion(self) -> None:
+        if self.editing is None:
+            self.message = 'No exclusion zone is being edited.'
+            return
+        zone = self.exclusions[self.editing]
+        if 0 < len(zone) < 3:
+            self.message = f'{self.target_name()} needs at least 3 points (or clear it with "u").'
+            return
+        if not zone:
+            del self.exclusions[self.editing]
+        self.editing = None
+        self.message = 'Back to the outline.'
 
     def save(self) -> None:
         '''Save the limits file (validated by save_limits) and the SVG preview.'''
         try:
-            axis_limits.save_limits(self.output, self.mount.cpr, self.home, self.boundary)
+            axis_limits.save_limits(self.output, self.mount.cpr, self.home, self.boundary, self.exclusions)
             self.saved = True
-            self.message = f'Saved: {self.output} ({len(self.boundary)} boundary points)'
+            self.message = (f'Saved: {self.output} ({len(self.boundary)} boundary points, '
+                            f'{len([z for z in self.exclusions if z])} exclusion zone(s))')
             ok = True
         except axis_limits.LimitError as e:
             self.message = f'Not saved: {e}'
@@ -160,7 +208,7 @@ class Teacher:
             return
         status = self.problem() or 'Outline is valid.'
         limits_plot.write_svg(self.preview_path, (self.home[1], self.home[2]), self.boundary,
-                              (self.pos[1], self.pos[2]), self.margin, status)
+                              (self.pos[1], self.pos[2]), self.margin, status, self.exclusions)
         self.message = f'Graphic saved: {os.path.basename(self.preview_path)}'
 
     def update(self) -> None:
@@ -173,19 +221,23 @@ class Teacher:
             self.pos[axis] = self.mount._inquire_position(axis)
 
     def problem(self) -> str | None:
-        '''First problem of the taught outline, or None if it is valid.'''
+        '''First problem of the taught outline and zones, or None if they are valid.'''
         problems = axis_limits.polygon_problems(self.boundary)
         if problems:
             return problems[0]
-        if not axis_limits.point_in_polygon((self.home[1], self.home[2]), self.boundary):
+        home = (self.home[1], self.home[2])
+        if not axis_limits.point_in_polygon(home, self.boundary):
             return 'Home lies outside the outline.'
-        return None
+        zones = [z for z in self.exclusions if len(z) >= 3]
+        problems = axis_limits.exclusion_problems(self.boundary, zones, home)
+        return problems[0] if problems else None
 
     def status_lines(self) -> list[str]:
-        '''Status lines for the screen: last point, validity, clearance here.'''
-        lines = []
-        if self.boundary:
-            last = self.boundary[-1]
+        '''Status lines for the screen: what is edited, last point, validity, clearance here.'''
+        lines = [f'Editing: {self.target_name()}   (exclusion zones: {len(self.exclusions)})']
+        target = self._target()
+        if target:
+            last = target[-1]
             lines.append(f'Last point (rel. to home): axis 1 {deg(last[0] - self.home[1]):+.2f}, '
                          f'axis 2 {deg(last[1] - self.home[2]):+.2f} degrees')
         if len(self.boundary) >= 3:
@@ -194,7 +246,8 @@ class Teacher:
                 lines.append('Not valid like this: ' + problem)
             else:
                 p = (self.pos[1], self.pos[2])
-                c = axis_limits.clearance(p, self.boundary, self.margin)
+                c = axis_limits.clearance(p, self.boundary, self.margin,
+                                          [z for z in self.exclusions if len(z) >= 3])
                 state = 'inside' if c >= 0 else 'OUTSIDE'
                 lines.append(f'Current position with {deg(self.margin):.1f} degrees margin: {state} '
                              f'({deg(c):+.2f} degrees)')
@@ -241,6 +294,13 @@ def ui(stdscr: Any, teacher: Teacher) -> None:
                     teacher.message = 'Not available in check mode.'
                 else:
                     teacher.save()
+            elif key in (ord('n'), ord('e')):
+                if teacher.check_mode:
+                    teacher.message = 'Not available in check mode.'
+                elif key == ord('n'):
+                    teacher.new_exclusion()
+                else:
+                    teacher.end_exclusion()
             elif key == ord('g'):
                 teacher.write_preview()
             elif key == ord('q'):
@@ -268,14 +328,15 @@ def ui(stdscr: Any, teacher: Teacher) -> None:
             f'boundary points: {len(teacher.boundary)}',
             *teacher.status_lines(),
             'Hold arrows = move | Space = STOP | +/- speed',
-            'm = mark point | u = discard | g = graphic | s = save | q = quit',
+            'm = mark point | u = discard | n/e = start/end exclusion zone | g = graphic | s = save | q = quit',
             teacher.message,
             '',
         ]
         map_h = rows - len(lines) - 1
         if map_h >= 8 and cols >= 30:
             lines += limits_plot.render_ascii((teacher.home[1], teacher.home[2]), teacher.boundary,
-                                              (teacher.pos[1], teacher.pos[2]), cols - 1, map_h)
+                                              (teacher.pos[1], teacher.pos[2]), cols - 1, map_h,
+                                              teacher.exclusions)
         for i, line in enumerate(lines[:rows]):
             try:
                 stdscr.addstr(i, 0, line[:cols - 1])
@@ -299,6 +360,7 @@ def main() -> None:
         if guard is not None:
             teacher.check_mode = True
             teacher.boundary = list(guard.poly)
+            teacher.exclusions = [list(z) for z in guard.holes]
             teacher.home = {1: guard.home[0], 2: guard.home[1]}
             teacher.margin = guard.margin
             teacher.message = 'CHECK MODE: limit guard active. Move freely and check the behaviour at the edge.'
@@ -306,6 +368,19 @@ def main() -> None:
             def notify(text: str, t: Teacher = teacher) -> None:
                 t.message = f'CHECK MODE: {text}'
             guard.notify = notify
+        elif args.edit:
+            limits = axis_limits.load_limits(output)
+            if int(limits['cpr'][1]) != mount.cpr[1] or int(limits['cpr'][2]) != mount.cpr[2]:
+                raise SystemExit('The file does not match this mount (steps per revolution).')
+            teacher.home = {1: rad(limits['home_deg'][1]), 2: rad(limits['home_deg'][2])}
+            teacher.boundary = [(rad(a), rad(b)) for a, b in limits['polygon_deg']]
+            teacher.exclusions = [[(rad(a), rad(b)) for a, b in z] for z in (limits.get('exclusions_deg') or [])]
+            off = max(abs(teacher.pos[1] - teacher.home[1]), abs(teacher.pos[2] - teacher.home[2]))
+            teacher.message = (f'{os.path.basename(output)} loaded: {len(teacher.boundary)} boundary points, '
+                               f'{len(teacher.exclusions)} exclusion zone(s).')
+            if off > rad(1.0):
+                teacher.message += (f' WARNING: The mount is {deg(off):.1f} degrees away from the saved home '
+                                    'position. Was it switched on at home?')
         curses.wrapper(ui, teacher)
     finally:
         for axis in [1, 2]:

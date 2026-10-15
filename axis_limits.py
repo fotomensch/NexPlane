@@ -136,13 +136,31 @@ def polygon_problems(poly: list[Point]) -> list[str]:
                         'Please mark the points in order along the boundary.')
     return problems
 
-def clearance(p: Point, poly: list[Point], margin: float) -> float:
+def clearance(p: Point, poly: list[Point], margin: float,
+              holes: 'list[list[Point]] | tuple[()]' = ()) -> float:
     '''
-    How far p lies inside the permitted area (outline minus safety margin).
+    How far p lies inside the permitted area (outline minus safety margin,
+    and also outside all exclusion zones including safety margin).
     >= 0: permitted, < 0: not permitted.
     '''
     d = edge_distance(p, poly)
-    return d - margin if point_in_polygon(p, poly) else -d - margin
+    c = d - margin if point_in_polygon(p, poly) else -d - margin
+    for hole in holes:
+        dh = edge_distance(p, hole)
+        ch = -dh - margin if point_in_polygon(p, hole) else dh - margin
+        if ch < c:
+            c = ch
+    return c
+
+def exclusion_problems(boundary: list[Point], exclusions: list[list[Point]], home: Point) -> list[str]:
+    '''Check of the exclusion zones (empty = OK).'''
+    problems = []
+    for k, zone in enumerate(exclusions, start=1):
+        for prob in polygon_problems(zone):
+            problems.append(f'Exclusion zone {k}: {prob}')
+        if len(zone) >= 3 and point_in_polygon(home, zone):
+            problems.append(f'Exclusion zone {k} contains the home position.')
+    return problems
 
 # ---------------------------------------------------------------------------
 # File read/write
@@ -151,19 +169,25 @@ def clearance(p: Point, poly: list[Point], margin: float) -> float:
 def save_limits(path: str,
                 cpr: dict[int, int],
                 home_rad: dict[int, float],
-                boundary_rad: list[Point]) -> dict[str, Any]:
-    '''Saves home position and outline.'''
+                boundary_rad: list[Point],
+                exclusions_rad: list[list[Point]] | None = None) -> dict[str, Any]:
+    '''Saves home position, outline and exclusion zones.'''
+    exclusions_rad = [z for z in (exclusions_rad or []) if z]
     problems = polygon_problems(boundary_rad)
     if problems:
         raise LimitError(' '.join(problems))
     if not point_in_polygon((home_rad[1], home_rad[2]), boundary_rad):
         raise LimitError('The home position lies outside the outline.')
+    problems = exclusion_problems(boundary_rad, exclusions_rad, (home_rad[1], home_rad[2]))
+    if problems:
+        raise LimitError(' '.join(problems))
     data: dict[str, Any] = {
         'version': 2,
         'created': datetime.datetime.now().isoformat(timespec='seconds'),
         'cpr': {1: int(cpr[1]), 2: int(cpr[2])},
         'home_deg': {1: deg(home_rad[1]), 2: deg(home_rad[2])},
         'polygon_deg': [[deg(p[0]), deg(p[1])] for p in boundary_rad],
+        'exclusions_deg': [[[deg(p[0]), deg(p[1])] for p in zone] for zone in exclusions_rad],
     }
     with open(path, 'w') as f:
         f.write('# NexPlane safe area, created with teach_limits.py\n')
@@ -209,6 +233,7 @@ class AxisLimitGuard:
         self.settings = settings
 
         self.poly: list[Point] = []
+        self.holes: list[list[Point]] = []
         self.home: Point = (0.0, 0.0)
         self._load_geometry(limits)
         self.margin = rad(float(settings['margin_degrees']))
@@ -260,24 +285,28 @@ class AxisLimitGuard:
 
         home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
         print(f'Safe area active: outline with {len(self.poly)} points, '
-              f'safety margin {settings["margin_degrees"]} degrees.')
+              f'{len(self.holes)} exclusion zone(s), safety margin {settings["margin_degrees"]} degrees.')
         print(f'  Current position relative to home: axis 1 {deg(p1 - home[0]):+.2f}, '
               f'axis 2 {deg(p2 - home[1]):+.2f} degrees, distance to the edge {deg(c):.2f} degrees.')
 
     # --- Geometry ---------------------------------------------------------
 
     def _load_geometry(self, limits: dict[str, Any]) -> None:
-        '''Take outline and home position from a limits file (after validating them).'''
+        '''Take outline, exclusion zones and home position from a limits file (after validating them).'''
         poly = [(rad(a), rad(b)) for a, b in limits['polygon_deg']]
         problems = polygon_problems(poly)
         if problems:
             raise LimitError('The outline in the limits file is invalid: ' + ' '.join(problems))
-        self.poly = poly
-        self.home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
+        holes = [[(rad(a), rad(b)) for a, b in zone] for zone in (limits.get('exclusions_deg') or []) if zone]
+        home = (rad(limits['home_deg'][1]), rad(limits['home_deg'][2]))
+        problems = exclusion_problems(poly, holes, home)
+        if problems:
+            raise LimitError('The exclusion zones in the limits file are invalid: ' + ' '.join(problems))
+        self.poly, self.holes, self.home = poly, holes, home
 
     def clearance_at(self, p: Point) -> float:
         '''Distance from p to the boundary of the permitted area (incl. safety margin), >= 0 permitted.'''
-        return clearance(p, self.poly, self.margin)
+        return clearance(p, self.poly, self.margin, self.holes)
 
     # --- Helper functions -------------------------------------------------
 
