@@ -291,9 +291,12 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
         <button class="btn" id="btn-corr-save" style="flex:1" title="Aircraft is centred: accept as sync point (gamepad ✕)">Accept (sync point)</button>
         <button class="btn" id="btn-model-pop" title="Delete last sync point (gamepad □)">Delete last</button>
       </div>
-      <div class="row" id="focal-row" style="margin-top:8px;display:none;gap:6px;align-items:center">
+      <div class="row" id="focal-row" style="margin-top:8px;display:none;gap:6px;align-items:center;flex-wrap:wrap">
         <span class="hint">Focal length when accepting</span>
         <select id="focal-sel" class="btn"></select>
+        <button class="btn" id="focal-del" style="display:none" title="Remove this focal length from the list (only focal lengths added here)">✕</button>
+        <input id="focal-new" class="btn" inputmode="decimal" style="width:6em" placeholder="other (mm)">
+        <button class="btn" id="focal-add" title="Add the focal length to the list and select it (kept in focal_lengths.yaml)">Add</button>
       </div>
       <div id="model-status" style="margin-top:6px;font-size:13px"></div>
       <div id="model-points" style="margin-top:4px;font-size:12px"></div>
@@ -634,6 +637,8 @@ function updatePanel() {
       const steps = F.steps.includes(F.mm) ? F.steps : [...F.steps, F.mm].sort((a, b) => a - b);
       $('focal-sel').innerHTML = steps.map(s => `<option value="${s}" ${s === F.mm ? 'selected' : ''}>${Math.round(s)} mm</option>`).join('');
     }
+    // Only focal lengths added in the browser can be removed here (those from config.yaml stay).
+    $('focal-del').style.display = (F.own || []).some(v => Math.abs(v - F.mm) < 0.5) ? '' : 'none';
     $('corr-hint').textContent = T('W/A/S/D and the buttons shift in the camera image (0.1°, with Shift 0.5°), Q = 0. The correction is kept for all aircraft. When the tracked aircraft is centred, “Accept” turns it into a sync point.');
     const G = S.gamepad;
     $('pad-status').innerHTML = !G ? `<span class="hint">${esc(T('Gamepad disabled (config.yaml).'))}</span>`
@@ -931,6 +936,14 @@ $('model-points').addEventListener('click', e => {
   if (confirm(T('Delete sync point {n}?', {n: i + 1}))) api('model_pop', {index: i});
 });
 $('focal-sel').onchange = e => api('set_focal', {mm: Number(e.target.value)});
+async function addFocal() {
+  const mm = Number($('focal-new').value.trim().replace(',', '.'));
+  const r = await api('focal_add', {mm: $('focal-new').value.trim() && isFinite(mm) ? mm : null});
+  if (r && r.ok) $('focal-new').value = '';
+}
+$('focal-add').onclick = addFocal;
+$('focal-new').onkeydown = e => { if (e.key === 'Enter') addFocal(); };
+$('focal-del').onclick = () => api('focal_remove', {mm: Number($('focal-sel').value)});
 document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
   const [x, y] = b.dataset.off.split(',').map(Number); const s = $('opt-big').checked ? 0.5 : 0.1;
   api('offset', {daz: x * s, del: y * s});

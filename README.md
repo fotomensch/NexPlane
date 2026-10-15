@@ -569,7 +569,9 @@ was switched on at home.
 
 Each sync point records the focal length selected in the Correction card; points taken with a
 longer focal length count more in the fit. Settings: `focal_lengths_mm: [150, 300, 600]`,
-`focal_length_mm` (start value), `sensor_width_mm: 23.5`.
+`focal_length_mm` (start value), `sensor_width_mm: 23.5`. Other focal lengths can be typed in next
+to the list ("Add"); they are kept in `focal_lengths.yaml` next to `config.yaml` and can be removed
+again with ✕. The gamepad Options button cycles through all of them.
 
 "Forget alignment" discards sync points, model and correction (and on request
 `home_direction.yaml`), e.g. after tests indoors.

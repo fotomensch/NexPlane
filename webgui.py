@@ -33,6 +33,7 @@ import astropy.coordinates as coords
 import astropy.units as units
 import numpy
 
+import focal_lengths
 import util
 
 from messages import Msg, Text, to_json
@@ -127,7 +128,8 @@ class WebGui:
         self.corr_info: dict[str, Any] = {}
         self.gamepad_info: dict[str, Any] | None = None
         self.focal_mm = 300.0
-        self.focal_steps: list[float] = [150.0, 300.0, 600.0]
+        self.focal_config: list[float] = [150.0, 300.0, 600.0]   # focal_lengths_mm from config.yaml
+        self.focal_own: list[float] = []                          # added in the browser (focal_lengths.yaml)
         self.reach: dict[str, Any] | None = None
         self.reach_status: Text = ''
         self.reach_version = 0
@@ -295,13 +297,24 @@ class WebGui:
             self.gamepad_info = gamepad
 
     def set_focal_options(self, steps: list[float], default: float) -> None:
+        '''Focal lengths from config.yaml and the one selected at start; own ones come from focal_lengths.yaml.'''
         with self.lock:
-            self.focal_steps = list(steps)
+            self.focal_config = list(steps)
+            self.focal_own = focal_lengths.load()
             self.focal_mm = default
 
     def get_focal(self) -> float:
         with self.lock:
             return self.focal_mm
+
+    def _focal_steps(self) -> list[float]:
+        '''All selectable focal lengths, sorted; own ones that duplicate a config value are left out.'''
+        own = [v for v in self.focal_own if not any(focal_lengths.same(v, c) for c in self.focal_config)]
+        return sorted(self.focal_config + own)
+
+    def get_focal_steps(self) -> list[float]:
+        with self.lock:
+            return self._focal_steps()
 
     def refine_is_active(self) -> bool:
         with self.lock:
@@ -446,7 +459,7 @@ class WebGui:
                 'axis_rel': self.axis_rel,
                 'refine': dict(self.refine_info, active=self.refine_active) if self.refine_active else {'active': False},
                 'axis_correction': self.axis_correction,
-                'focal': {'mm': self.focal_mm, 'steps': self.focal_steps},
+                'focal': {'mm': self.focal_mm, 'steps': self._focal_steps(), 'own': self.focal_own},
                 'correction': self.corr_info,
                 'gamepad': self.gamepad_info,
                 'reach': {'version': self.reach_version, 'available': self.reach is not None,
@@ -729,6 +742,22 @@ class WebGui:
                 if not 10 <= mm <= 5000:
                     return _error(Msg('Invalid focal length'))
                 self.focal_mm = mm
+            elif name in ('focal_add', 'focal_remove'):
+                try:
+                    mm = float(data['mm'])
+                except (KeyError, TypeError, ValueError):
+                    return _error(Msg('Enter the focal length in mm as a number'))
+                if name == 'focal_add':
+                    err = focal_lengths.add(mm, self.focal_config)
+                else:
+                    err = focal_lengths.remove(mm)
+                if err:
+                    return _error(err)
+                self.focal_own = focal_lengths.load()
+                if name == 'focal_add':
+                    self.focal_mm = float(round(mm))   # a new focal length is usually the one in use
+                elif focal_lengths.same(self.focal_mm, mm):
+                    self.focal_mm = self._focal_steps()[0]
             elif name == 'gain':
                 which = data.get('which')
                 delta = float(data.get('delta', 0.0))
