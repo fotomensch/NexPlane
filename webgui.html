@@ -188,7 +188,7 @@ label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color
       <div class="hint">Red tint: directions the mount cannot reach on either side of the pole with the active profile. On the map this applies to aircraft at the selected altitude.</div>
       <details id="refine-box" style="margin-top:10px">
         <summary style="cursor:pointer;font-weight:600">Refine limits</summary>
-        <div class="hint" style="margin:6px 0">The crosshair on the map (for the flight altitude chosen above) and in the sky view shows where the telescope points. Disable the safe area, move the crosshair under supervision into a red area until just before a collision, then “Accept point” (gamepad: Share). Several points along the real limit make the red area smaller; the safety margin still applies.</div>
+        <div class="hint" style="margin:6px 0">The crosshair on the map (for the flight altitude chosen above) and in the sky view shows where the telescope points. Disable the safe area, move the crosshair under supervision into a red area until just before a collision, then “Accept point” (gamepad: Share). The gamepad stick moves the crosshair on the map directly: up = north, right = east (only after alignment). Several points along the real limit make the red area smaller; the safety margin still applies.</div>
         <div id="refine-status" style="margin-top:6px;font-size:13px"></div>
         <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
           <button class="btn" id="refine-add" style="font-weight:600">Accept point</button>
@@ -792,7 +792,8 @@ $('place-list').addEventListener('click', e => {
 });
 
 // ---- Refining the safe area (axis-space view with crosshair) ----
-$('refine-box').addEventListener('toggle', () => api('refine', {action: $('refine-box').open ? 'on' : 'off'}));
+$('refine-box').addEventListener('toggle', () => api('refine', {action: $('refine-box').open ? 'on' : 'off', alt_m: Number($('opt-blind-alt').value)}));
+$('opt-blind-alt').addEventListener('change', () => { if ($('refine-box').open) api('refine', {action: 'alt', alt_m: Number($('opt-blind-alt').value)}); });
 $('refine-add').onclick = () => api('refine', {action: 'add'});
 $('refine-undo').onclick = () => api('refine', {action: 'undo'});
 $('refine-save').onclick = () => { if (confirm(T('Save the refined safe area? The previous file is kept as .bak.'))) api('refine', {action: 'save'}); };

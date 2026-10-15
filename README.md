@@ -630,6 +630,8 @@ real limit and accept the position as a new corner of the outline (or of an excl
 then gets smaller). A crosshair on the map and in the sky view shows where the telescope
 points. Points can be undone, saved (the previous file is kept as `.bak`) or discarded.
 
+While refining, the gamepad stick moves the crosshair on the map: up = north, right = east.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on

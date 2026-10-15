@@ -418,6 +418,7 @@ def main() -> None:
                 return '', None, None
 
         obs_lat = float(observatory_location.lat.to_value('rad'))
+        obs_height = float(observatory_location.height.to_value('m'))
         sensor_mm = float(config_data.get('sensor_width_mm', 23.5))
         focal_steps = [float(x) for x in config_data.get('focal_lengths_mm', [150, 300, 600])]
         if args.web:
@@ -859,8 +860,22 @@ def main() -> None:
                         if gui_iface.home_active():
                             gui_iface.home_done()
                             notify(Msg('Go-home cancelled (gamepad).'))
-                        jx, jy = padctl.jog_rate(axes)
-                        d_ra, d_dec = img2ax(jx, jy)
+                        map_rates = None
+                        if gui_iface.refine_is_active() and gui_iface.is_aligned() and pointing is not None \
+                                and pointing.last_raw is not None:
+                            # Refining the limits: stick moves the crosshair on the map 1:1 (up = north)
+                            me, mn, mspeed = padctl.map_stick(axes)
+                            s_az, s_el = float(scope_azm_alt[0]), float(scope_azm_alt[1])
+                            daz, delv = pad_control.map_to_altaz_rate(me, mn, mspeed, s_az, s_el,
+                                                                      gui_iface.get_refine_alt() - obs_height)
+                            dra, ddec = pad_control.altaz_rate_to_radec_rate(s_az, s_el, daz, delv, obs_lat)
+                            map_rates = pad_control.radec_rate_to_raw_rate(pointing.raw_to_radec, *pointing.last_raw,
+                                                                           dra, ddec)
+                        if map_rates is not None:
+                            d_ra, d_dec = map_rates
+                        else:
+                            jx, jy = padctl.jog_rate(axes)
+                            d_ra, d_dec = img2ax(jx, jy)
                         r1, r2 = -d_ra, d_dec          # Axis 1 runs opposite to ra_raw
                         m = max(abs(r1), abs(r2))
                         if m > max_slew:

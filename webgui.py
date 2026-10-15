@@ -119,6 +119,7 @@ class WebGui:
         self.refine_info: dict[str, Any] = {}
         self.refine_queue: list[str] = []
         self.axis_rel: list[float] | None = None   # axis position relative to the taught home (degrees)
+        self.refine_alt_m = 10000.0     # flight altitude of the map crosshair (gamepad map control)
         # Correction in the image frame (EQ mount): steps/commands for the main loop
         self.axis_correction = False
         self.corr_queue: list[tuple[str, float, float]] = []
@@ -313,6 +314,10 @@ class WebGui:
     def set_axis_rel(self, a1: float, a2: float) -> None:
         with self.lock:
             self.axis_rel = [round(a1, 2), round(a2, 2)]
+
+    def get_refine_alt(self) -> float:
+        with self.lock:
+            return self.refine_alt_m
 
     def queue_refine(self, action: str) -> None:
         with self.lock:
@@ -540,6 +545,13 @@ class WebGui:
                 action = data.get('action')
                 if not self.profiles:
                     return _error(Msg('No safe area configured'))
+                if data.get('alt_m') is not None:
+                    try:
+                        self.refine_alt_m = max(0.0, min(20000.0, float(data['alt_m'])))
+                    except (TypeError, ValueError):
+                        return _error(Msg('Invalid altitude'))
+                if action == 'alt':
+                    return {'ok': True}
                 if action in ('on', 'off'):
                     self.refine_active = action == 'on'
                     if not self.refine_active:

@@ -3,6 +3,8 @@ Gamepad control for NexPlane (EQ mount, browser UI).
 
 Mapping (PS4 controller):
   Left stick      while tracking: correction (nudge the image); otherwise slew the mount manually.
+                  While refining the safe area (aligned): moves the crosshair on the map,
+                  stick up = north, right = east, at the selected flight altitude
   Right stick     fine correction or slow slewing
   R2 (analog)     faster (search)
   D-pad           small correction steps
@@ -91,6 +93,21 @@ class PadControl:
         fine = float(self.s['fine_factor'])
         return (x + fx * fine) * rate, (y + fy * fine) * rate
 
+    def map_stick(self, axes: dict[str, float]) -> tuple[float, float, float]:
+        '''
+        Stick in the map frame for refining the limits: (east, north) unit direction and the
+        angular speed (rad/s). No camera inversion: stick up = north on the map, right = east.
+        '''
+        e = self._expo(axes['lx']) + self._expo(axes['rx']) * float(self.s['fine_factor'])
+        n = self._expo(axes['ly']) + self._expo(axes['ry']) * float(self.s['fine_factor'])
+        mag = math.hypot(e, n)
+        if mag < 1e-9:
+            return 0.0, 0.0, 0.0
+        slow = float(self.s['jog_deg_per_s'])
+        fast = float(self.s['jog_fast_deg_per_s'])
+        rate = math.radians(slow + (fast - slow) * axes['r2']) * min(1.0, mag)
+        return e / mag, n / mag, rate
+
     def step(self, press: str) -> tuple[float, float] | None:
         '''Correction step for a D-pad press in the image frame (rad), or None for other buttons.'''
         st = math.radians(float(self.s['step_degrees']))
@@ -99,6 +116,100 @@ class PadControl:
             return None
         x, y = self._image_vec(float(vec[0]), float(vec[1]))
         return x * st, y * st
+
+# ---------------------------------------------------------------------------
+# Map-frame control (crosshair on the ground map at a flight altitude)
+# ---------------------------------------------------------------------------
+
+EARTH_R = 6371000.0
+MAX_MAP_DIST = 450000.0   # same range as the map in the browser
+
+def _el_at(d: float, dh: float) -> float:
+    '''Elevation under which a point at height dh above the observer appears at ground distance d.'''
+    return math.atan2(dh - d * d / (2 * EARTH_R), d)
+
+def map_distance(el: float, dh: float) -> float | None:
+    '''Ground distance at which the line of sight with elevation el reaches height dh (None: not on the map).'''
+    if dh <= 0 or el <= 0 or _el_at(MAX_MAP_DIST, dh) >= el:
+        return None
+    lo, hi = 1.0, MAX_MAP_DIST
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        if _el_at(mid, dh) > el:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+def map_to_altaz_rate(east: float, north: float, speed: float, az: float, el: float,
+                      dh: float) -> tuple[float, float]:
+    '''
+    Direction on the ground map (unit vector east/north) -> rates (d_az, d_el) in rad/s so that the
+    crosshair at height dh moves in exactly that map direction. The angular speed on the sky is
+    'speed', so the mount moves at the usual jog speed regardless of the distance.
+    Azimuth from north over east.
+    '''
+    v_r = east * math.sin(az) + north * math.cos(az)     # away from the observer
+    v_t = east * math.cos(az) - north * math.sin(az)     # clockwise (increasing azimuth)
+    d = map_distance(el, dh)
+    if d is not None:
+        h = max(1.0, d * 1e-4)
+        del_dd = (_el_at(d + h, dh) - _el_at(d - h, dh)) / (2 * h)    # negative: farther = lower
+        d_az = v_t / d
+        d_el = v_r * del_dd
+    else:
+        # Line of sight does not reach the altitude on the map: away = lower, sideways = azimuth
+        d_az = v_t / max(math.cos(el), 0.05)
+        d_el = -v_r
+    sky = math.hypot(d_az * math.cos(el), d_el)
+    if sky < 1e-12:
+        return 0.0, 0.0
+    return d_az * speed / sky, d_el * speed / sky
+
+def altaz_to_hadec(az: float, el: float, lat: float) -> tuple[float, float]:
+    '''Azimuth (from north over east) / elevation -> hour angle / declination.'''
+    sd = math.sin(el) * math.sin(lat) + math.cos(el) * math.cos(lat) * math.cos(az)
+    dec = math.asin(max(-1.0, min(1.0, sd)))
+    ha = math.atan2(-math.sin(az) * math.cos(el),
+                    math.sin(el) * math.cos(lat) - math.cos(el) * math.cos(az) * math.sin(lat))
+    return ha, dec
+
+def _wrap_pi(x: float) -> float:
+    return (x + math.pi) % (2 * math.pi) - math.pi
+
+def altaz_rate_to_radec_rate(az: float, el: float, d_az: float, d_el: float,
+                             lat: float) -> tuple[float, float]:
+    '''Rates in az/el -> rates in RA/Dec (instantaneous, RA = LST - HA).'''
+    m = math.hypot(d_az, d_el)
+    if m < 1e-12:
+        return 0.0, 0.0
+    k = 1e-4 / m
+    ha0, dec0 = altaz_to_hadec(az, el, lat)
+    ha1, dec1 = altaz_to_hadec(az + d_az * k, el + d_el * k, lat)
+    return -_wrap_pi(ha1 - ha0) / k, (dec1 - dec0) / k
+
+def radec_rate_to_raw_rate(raw_to_radec: Any, ra_raw: float, dec_raw: float,
+                           d_ra: float, d_dec: float) -> tuple[float, float] | None:
+    '''
+    RA/Dec rates -> axis rates (ra_raw, dec_raw), via the numeric Jacobian of the pointing
+    function raw_to_radec (covers both pier sides and the polar-error model).
+    '''
+    h = 1e-4
+    r0 = raw_to_radec(ra_raw - h, dec_raw)
+    r1 = raw_to_radec(ra_raw + h, dec_raw)
+    s0 = raw_to_radec(ra_raw, dec_raw - h)
+    s1 = raw_to_radec(ra_raw, dec_raw + h)
+    a = _wrap_pi(r1[0] - r0[0]) / (2 * h)
+    c = (r1[1] - r0[1]) / (2 * h)
+    b = _wrap_pi(s1[0] - s0[0]) / (2 * h)
+    d = (s1[1] - s0[1]) / (2 * h)
+    det = a * d - b * c
+    if abs(det) < 1e-9:
+        return None
+    # Near the pole an RA rate needs a huge axis rate: limit like image_to_axes (cos >= 0.15)
+    if abs(det) < 0.15:
+        det = math.copysign(0.15, det)
+    return (d * d_ra - b * d_dec) / det, (-c * d_ra + a * d_dec) / det
 
 # ---------------------------------------------------------------------------
 # Aircraft selection with R1/L1
