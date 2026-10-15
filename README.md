@@ -1,5 +1,4 @@
 > **This is a fork of [nforrester/NexPlane](https://github.com/nforrester/NexPlane)** with
-> extensions for tracking aircraft with a **Sky-Watcher EQ5 in equatorial mode**: taught axis
 > limits, meridian flips, a browser GUI, a pointing model built from aircraft sync points, PS4
 > controller support and more. The work lives on the branch `eq5-extensions`; `master` mirrors
 > upstream. All features are described in **[FEATURES.md](FEATURES.md)** and are being proposed
