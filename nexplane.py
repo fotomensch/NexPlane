@@ -18,6 +18,7 @@ import align
 import axis_limits
 import eq_flip
 import gamepad
+import gps
 import pad_control
 import places
 import reach_map
@@ -168,6 +169,8 @@ def main() -> None:
                 for name, loc in locs.items()},
                 {name: str(loc.get('type', 'location')) for name, loc in locs.items()}, own_places)
         publish_locations()
+        if config_data.get('gps', True):
+            gui_iface.set_gps(gps.GpsReader())
         gui_airplanes = gui_gain_reader = gui_offset_reader = gui_iface
         gui_sun_moon = gui_telescope = gui_comm_warning = gui_iface
     else:

@@ -109,6 +109,7 @@ class WebGui:
         self.location_types: dict[str, str] = {}
         self.location_own: set[str] = set()
         self.place_queue: list[dict[str, Any]] = []
+        self.gps_reader: Any = None
         self.profiles: list[str] = []
         self.profile = ''
         self.profile_request: str | None = None
@@ -253,6 +254,9 @@ class WebGui:
     def set_align_targets(self, targets: list[str]) -> None:
         with self.lock:
             self.align_targets = list(targets)
+
+    def set_gps(self, reader: Any) -> None:
+        self.gps_reader = reader
 
     def pop_place_requests(self) -> list[dict[str, Any]]:
         with self.lock:
@@ -427,6 +431,7 @@ class WebGui:
                                   'side': self.fixed_target['side']} if self.fixed_target else None),
             }
 
+        out['gps'] = self.gps_reader.state() if self.gps_reader is not None else None
         now_ns = time.monotonic_ns()
         plane_list = []
         ned_rows = []

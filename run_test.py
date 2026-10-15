@@ -43,6 +43,7 @@ def run_mypy() -> None:
         'align.py',
         'dump_config.py',
         'gamepad.py',
+        'gps_check.py',
         'nexplane.py',
         'rpc_client_test.py',
         'rpc_server_test.py',

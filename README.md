@@ -614,6 +614,11 @@ pointing errors. `track_log: false` turns this off.
 satellite imagery) and saves it as a location or as a landmark for alignment. Entries are stored
 in `places.yaml` next to `config.yaml`, which itself is never changed.
 
+If the computer has a WWAN modem with GPS that ModemManager can read (`mmcli`), the Location
+card shows the GPS position, warns when the selected location is more than 300 m away and can
+fill in the editor from it. `./gps_check.py` checks whether the modem delivers a position.
+`gps: false` turns this off.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
