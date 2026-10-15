@@ -485,6 +485,21 @@ axis_limits:
 Teach each one with `./teach_limits.py --profile camera`. All profiles must be taught at the
 same home position.
 
+### Meridian flip (equatorial Sky-Watcher mounts)
+
+In equatorial mode almost every point of the sky can be reached on two pier sides. NexPlane
+uses both sides: it picks the side where a new target stays reachable longest and flips
+when the current side runs into the axis limits. Without axis limits it stays on the side it is
+on. Settings:
+
+```yaml
+meridian_flip: true                 # automatic side change (needs axis_limits)
+max_slew_degrees_per_second: 5.0    # speed limit for flips and slews
+```
+
+If axis limits are set up, the alignment (landmark or `align.py`) may be done on either side;
+the taught home position tells NexPlane which side it was.
+
 ## Trouble spots
 
 NexPlane probably contains bugs. It has not been tested by a large number of people or on
