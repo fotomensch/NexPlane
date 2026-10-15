@@ -71,9 +71,10 @@ def serial_driver(tty: str) -> str:
 
 def find_mount_port() -> str | None:
     '''
-    Find the mount's serial port. Previously the first /dev/ttyUSB* was simply used;
-    but if the laptop has a built-in LTE modem, that is a modem port.
-    Typical USB-serial adapters are preferred, modems are skipped.
+    Attempt to find the mount's serial port automatically. There will probably be one USB serial
+    adapter (/dev/ttyUSB*), and that will probably be the correct port. However, LTE modems may
+    also appear in the /dev/ttyUSB* range, so try to differentiate between these by checking which
+    driver they use.
     '''
     candidates = [f'/dev/ttyUSB{i}' for i in range(32) if os.path.exists(f'/dev/ttyUSB{i}')]
     for port in candidates:

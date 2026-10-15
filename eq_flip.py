@@ -5,7 +5,7 @@ For almost every point in the sky there are two axis positions:
   Side A: Dec axis on the side of the pole on which the alignment was done.
   Side B: RA rotated by 180 degrees, Dec axis mirrored beyond the pole.
 
-The original NexPlane only computes side A. This module
+Using the raw axis positions directly as RA/Dec is only correct on side A. This module
   - computes the telescope position correctly on both sides,
   - determines both axis positions for a target (and for RA the most favorable
     revolution) and checks them against the taught safe area,
@@ -66,7 +66,7 @@ def calibrate(ra_true: float, dec_true: float, ra_raw: float, dec_raw: float,
     of the pole the telescope is on is detected: on side A, dec_raw is smaller than at
     home (there, an increasing count leads toward the pole), on side B larger. This makes
     alignment work on both sides. Without a home value, side A is
-    assumed (as in the original NexPlane).
+    assumed.
     '''
     if home_dec_raw is not None and dec_raw > home_dec_raw:
         return _wrap(ra_true - math.pi - ra_raw), _wrap(math.pi - dec_true - dec_raw), SIDE_B

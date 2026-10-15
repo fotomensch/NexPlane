@@ -544,7 +544,7 @@ same home position.
 ### Meridian flip (equatorial Sky-Watcher mounts)
 
 In equatorial mode almost every point of the sky can be reached on two pier sides. NexPlane
-now works on both sides: it picks the side where a new target stays reachable longest and flips
+uses both sides: it picks the side where a new target stays reachable longest and flips
 when the current side runs into the axis limits. Without axis limits it stays on the side it is
 on. Settings:
 

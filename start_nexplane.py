@@ -58,8 +58,8 @@ def port_open(port: int) -> bool:
 
 def udp_port_in_use(port: int) -> bool:
     '''
-    telescope_server listens via UDP (not TCP). Whether it is running is detected
-    by the port no longer being bindable.
+    telescope_server listens via UDP (not TCP), so there is no connection to test. Instead, try to
+    bind the port: if that fails, telescope_server (or another program) is using it.
     '''
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
